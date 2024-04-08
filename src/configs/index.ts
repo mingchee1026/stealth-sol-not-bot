@@ -7,7 +7,8 @@ import { SystemProgram } from '@solana/web3.js';
 
 import { getKeypairFromStr } from '../web3/base/utils';
 
-export const RPC_ENDPOINT_MAIN = 'https://api.mainnet-beta.solana.com';
+export const RPC_ENDPOINT_MAIN =
+  'https://greatest-cosmological-diamond.solana-mainnet.quiknode.pro/911eeb4f80ca21426f9d8cb6a743d84545db73fa/'; //'https://api.mainnet-beta.solana.com';
 export const RPC_ENDPOINT_TEST = 'https://api.testnet.solana.com';
 export const RPC_ENDPOINT_DEV = 'https://api.devnet.solana.com';
 export const RPC_ENDPOINT_LOCAL = 'http://127.0.0.1:8899';
@@ -18,7 +19,7 @@ const PINATA_DOMAIN = process.env.PINATA_DOMAIN;
 const PINATA_API_SECRET_KEY = process.env.PINATA_API_SECRET_KEY;
 const SKIP_DEPLOY_JSON_METADATA =
   process.env.SKIP_DEPLOY_JSON_METADATA == '1' ? true : false;
-const IN_PRODUCTION = process.env.PRODUCTION == '1' ? true : false;
+export const IN_PRODUCTION = process.env.PRODUCTION == '1' ? true : false;
 const LOG_ERROR = !IN_PRODUCTION;
 
 const CUSTOM_RPC_ENDPOINT_MAIN = process.env.CUSTOM_RPC_ENDPOINT_MAIN;

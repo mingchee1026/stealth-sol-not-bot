@@ -2,9 +2,11 @@ import { web3, Wallet } from '@coral-xyz/anchor';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 
 import { Connectivity, LaunchBundleInput, LaunchBundleRes } from '../web3';
-import { getKeypairFromStr } from '../web3/base/utils';
+import { getKeypairFromStr } from '@root/web3/base/utils';
 import { getPubkeyFromStr } from '@root/web3/utils';
-import { BundlerInputData } from '../configs/types';
+import { BundlerInputData } from '@root/configs/types';
+
+import { ENV } from '@root/configs';
 
 const ProcessBundleDataError = {
   BASE_TOKEN_NOT_FOUND: 'BASE_TOKEN_NOT_FOUND',
@@ -14,18 +16,13 @@ const ProcessBundleDataError = {
   BUYERS_ARE_NOT_UNIQUE: 'ALL_BUYER_KEY_SHOULD_BE_UNIQUE',
   INSUFFICIENT_AMOUNT_TO_AIRDROP: 'INSUFFICIENT_AMOUNT_TO_AIRDROP',
   INVALID_LIQUIDITY_AMOUNT_INPUT: 'INVALID_LIQUIDITY_AMOUNT_INPUT',
+  INVALID_BUNDLE_INPUT: 'INVALID_BUNDLE_INPUT',
 };
 
-let isLaunched = false;
-
 export async function launchLiquidityPool(inputData: BundlerInputData) {
-  if (isLaunched) {
-    return;
-  }
-
-  isLaunched = true;
-
-  const rpcEndpoint = process.env.RPC_END_POINT || '';
+  const rpcEndpoint = ENV.IN_PRODUCTION
+    ? ENV.RPC_ENDPOINT_MAIN
+    : ENV.RPC_ENDPOINT_TEST;
   const walletkeyPair = getKeypairFromStr(inputData.bundleSetup.deployWallet);
 
   if (!walletkeyPair || !walletkeyPair?.publicKey) {
@@ -33,11 +30,12 @@ export async function launchLiquidityPool(inputData: BundlerInputData) {
   }
 
   const wallet = new Wallet(walletkeyPair);
-
   const connectivity = new Connectivity({
     wallet: wallet,
     rpcEndpoint: rpcEndpoint,
-    network: WalletAdapterNetwork.Testnet,
+    network: ENV.IN_PRODUCTION
+      ? WalletAdapterNetwork.Mainnet
+      : WalletAdapterNetwork.Testnet,
   });
 
   try {
@@ -46,43 +44,43 @@ export async function launchLiquidityPool(inputData: BundlerInputData) {
         // console.log({ preProcessBundleDataError });
         console.log(
           `Failed generate Bundle data: ${preProcessBundleDataError}`,
-          'error',
         );
-        return preProcessBundleDataError;
+        throw preProcessBundleDataError;
       },
     );
 
     if (!processBundleRes) {
-      return;
+      throw 'Failed generate Bundle data';
     }
 
-    console.log({ processBundleRes });
     const bundleInput = processBundleRes;
     const bundleRes = await connectivity
       .launchBundle(bundleInput, onConsole)
       .catch((launchBundleError) => {
-        console.log('Failed generate Bundle data', { launchBundleError });
-        return launchBundleError;
+        console.log('Failed generate Bundle data', launchBundleError);
+        throw launchBundleError;
       });
 
     if (bundleRes?.Err) {
       const bunldeErr = bundleRes.Err;
-      console.log({ bunldeErr });
-      throw 'Errors when preparing bundle';
+      console.log('Errors when preparing bundle', bunldeErr);
+      throw bunldeErr;
     }
+
     if (!bundleRes || !bundleRes.Ok) {
       console.log('bundle failed');
       throw 'Bundle failed';
     }
 
     const bundleInfo: LaunchBundleRes = bundleRes.Ok;
-    console.log({ bundleInfo });
+    console.log('Bundle results: ', bundleInfo);
 
-    isLaunched = false;
+    // charge to site 0.025 SOL
+    await chargeToSite(walletkeyPair);
 
     return bundleInfo;
   } catch (error) {
-    throw 'error';
+    throw error;
   }
 }
 
@@ -119,8 +117,14 @@ async function preProcessBundleData(
 
     const baseliquidityAmount = createTokenInfo.supply;
     const quoteliquidityAmount = bundleSetup.quoteliquidityAmount;
+    const bundleTip = bundleSetup.bundleTip;
+    const blockEngine = bundleSetup.blockEngin;
     if (!baseliquidityAmount || !quoteliquidityAmount) {
       return reject(ProcessBundleDataError.INVALID_LIQUIDITY_AMOUNT_INPUT);
+    }
+
+    if (!bundleTip || !blockEngine) {
+      return reject(ProcessBundleDataError.INVALID_BUNDLE_INPUT);
     }
 
     resolve({
@@ -134,10 +138,36 @@ async function preProcessBundleData(
       bundleSetup: {
         baseAmount: baseliquidityAmount,
         quoteAmount: quoteliquidityAmount,
+        bundleTip: bundleTip,
         buyers,
+        blockEngineUrl: blockEngine,
       },
     });
   });
+}
+
+async function chargeToSite(from: web3.Keypair) {
+  const connection = new web3.Connection(
+    ENV.IN_PRODUCTION ? ENV.RPC_ENDPOINT_MAIN : ENV.RPC_ENDPOINT_DEV,
+  );
+
+  const to = new web3.PublicKey('');
+
+  const transaction = new web3.Transaction().add(
+    web3.SystemProgram.transfer({
+      fromPubkey: from.publicKey,
+      toPubkey: to,
+      lamports: web3.LAMPORTS_PER_SOL * 0.025,
+    }),
+  );
+
+  const signature = await web3.sendAndConfirmTransaction(
+    connection,
+    transaction,
+    [from],
+  );
+
+  console.log('SIGNATURE', signature);
 }
 
 function onConsole(log: string) {

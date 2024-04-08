@@ -1,5 +1,5 @@
 import { web3 } from '@coral-xyz/anchor';
-import { MenuTemplate } from 'grammy-inline-menu';
+import { MenuTemplate, createBackMainMenuButtons } from 'grammy-inline-menu';
 import { v4 as uuidv4 } from 'uuid';
 
 import { MainContext } from '@root/context';
@@ -10,8 +10,15 @@ import { serviceLiquidityPool } from '@root/services';
 import LiquidityPool from '@root/models/liquidity-pool-model';
 import OpenMarket from '@root/models/open-market-model';
 
+const bolckEngines: Record<string, string> = {
+  Amsterdam: 'amsterdam.mainnet.block-engine.jito.wtf',
+  Frankfurt: 'frankfurt.mainnet.block-engine.jito.wtf',
+  'New York': 'ny.mainnet.block-engine.jito.wtf',
+  Tokyo: 'tokyo.mainnet.block-engine.jito.wtf',
+};
+
 const menu = new MenuTemplate<MainContext>(async (ctx) => {
-  return 'Input informations to create liquidity pool:';
+  return 'Input information to create a Token Liquidity Pool:';
 });
 
 menu.interact('base-token', {
@@ -43,6 +50,38 @@ menu.interact('quote-token-liquidity', {
 
     return true;
   },
+});
+
+menu.interact('amount-percentage', {
+  text: 'Amount Percentage',
+  async do(ctx) {
+    ctx.session.step = 'msg-input-amount-percentage';
+    await ctx.conversation.enter('create-liquidity-pool-convo');
+
+    return true;
+  },
+  joinLastRow: true,
+});
+
+menu.interact('bundle-tip', {
+  text: 'Bundle Tip',
+  async do(ctx) {
+    ctx.session.step = 'msg-input-bundle-tip';
+    await ctx.conversation.enter('create-liquidity-pool-convo');
+
+    return true;
+  },
+});
+
+menu.interact('sol-txn-tip', {
+  text: 'Solana Txn Tip',
+  async do(ctx) {
+    ctx.session.step = 'msg-input-sol-txn-tip';
+    await ctx.conversation.enter('create-liquidity-pool-convo');
+
+    return true;
+  },
+  joinLastRow: true,
 });
 
 menu.interact('deploy-private-key', {
@@ -118,43 +157,60 @@ menu.interact('buyer3-private-key', {
   joinLastRow: true,
 });
 
+let selectedKey = 'Amsterdam';
+menu.select('select', {
+  choices: ['Amsterdam', 'Frankfurt', 'New York', 'Tokyo'],
+  async set(ctx, key) {
+    selectedKey = key;
+    await ctx.answerCallbackQuery({ text: `you selected ${key}` });
+    ctx.session.blockEngine = key;
+    return true;
+  },
+  isSet: (_, key) => key === selectedKey,
+});
+
 menu.interact('bundle', {
   text: 'Bundle',
   do: async (ctx) => {
-    const bundleId = ctx.session.bundleId;
-    const openMarket = await OpenMarket.findOne({ bundleId });
-
-    if (
-      !openMarket ||
-      openMarket.baseLogSize === 0 ||
-      openMarket.tickSize === 0
-    ) {
-      await ctx.reply('Please input market information.');
-      return true;
-    }
-
-    const liquidityPool = await LiquidityPool.findOne({ bundleId });
-    if (
-      !liquidityPool ||
-      liquidityPool.baseToken === '' ||
-      liquidityPool.quoteToken === '' ||
-      liquidityPool.tokenLiquidity === 0 ||
-      liquidityPool.deployWallet === ''
-    ) {
-      await ctx.reply('Please input Pool information.');
-      return true;
-    }
-
-    for (const buyer of liquidityPool.buyerInfos) {
-      if (buyer.buyAmount === 0 || buyer.buyerAuthority === '') {
-        await ctx.reply('Please input Pool information.');
-        return true;
-      }
-    }
-
-    const supply = 1000000; // from token creator
+    const initMsg = await ctx.reply('🟣 Intiated Deployment Transaction');
 
     try {
+      const bundleId = ctx.session.bundleId;
+      const openMarket = await OpenMarket.findOne({ bundleId });
+
+      if (
+        !openMarket ||
+        openMarket.baseLogSize === 0 ||
+        openMarket.tickSize === 0
+      ) {
+        // await ctx.reply('Please input market information.');
+        // return true;
+        throw 'Please input market information.';
+      }
+
+      const liquidityPool = await LiquidityPool.findOne({ bundleId });
+      if (
+        !liquidityPool ||
+        liquidityPool.baseToken === '' ||
+        liquidityPool.quoteToken === '' ||
+        liquidityPool.tokenLiquidity === 0 ||
+        liquidityPool.deployWallet === ''
+      ) {
+        // await ctx.reply('Please input Pool information.');
+        // return true;
+        throw 'Please input Pool information.';
+      }
+
+      for (const buyer of liquidityPool.buyerInfos) {
+        if (buyer.buyAmount === 0 || buyer.buyerAuthority === '') {
+          // await ctx.reply('Please input Pool information.');
+          // return true;
+          throw 'Please input Buyers information.';
+        }
+      }
+
+      const supply = 1000000; // from token creator
+
       const inputData: BundlerInputData = {
         createTokenInfo: {
           address: liquidityPool.baseToken,
@@ -166,8 +222,10 @@ menu.interact('bundle', {
           tickSize: openMarket.tickSize,
         },
         bundleSetup: {
-          baseliquidityAmount: supply,
+          baseliquidityAmount:
+            supply * (liquidityPool.amountOfPercentage / 100),
           quoteliquidityAmount: liquidityPool.tokenLiquidity,
+          bundleTip: liquidityPool.bundleTip,
           deployWallet: liquidityPool.deployWallet,
           buyerCount: 3,
           buyers: [
@@ -187,14 +245,38 @@ menu.interact('bundle', {
               privateKey: liquidityPool.buyerInfos[2].buyerAuthority,
             },
           ],
+          blockEngin: bolckEngines[ctx.session.blockEngine],
         },
       };
+
       const doBundle =
         await serviceLiquidityPool.launchLiquidityPool(inputData);
 
-      await ctx.reply(JSON.stringify(doBundle));
+      console.log(doBundle);
+
+      ctx.api.deleteMessage(
+        ctx.chat?.id || liquidityPool.chartId,
+        initMsg.message_id,
+      );
+
+      await ctx.reply(
+        `🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${doBundle?.bundleRes?.bundleId}' target='_blank'>here</a>.`,
+        {
+          parse_mode: 'HTML',
+        },
+      );
     } catch (error: any) {
-      await ctx.reply(error);
+      if (ctx.chat?.id) {
+        ctx.api.deleteMessage(ctx.chat?.id, initMsg.message_id);
+      }
+
+      const errMsg = await ctx.reply(`🔴 Transaction Failed : ${error}`);
+
+      await delay(5000);
+
+      if (ctx.chat?.id) {
+        ctx.api.deleteMessage(ctx.chat?.id, errMsg.message_id);
+      }
     }
 
     return true;
@@ -202,5 +284,7 @@ menu.interact('bundle', {
 });
 
 menu.manualRow(menuBack);
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default menu;

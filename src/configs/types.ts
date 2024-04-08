@@ -64,8 +64,10 @@ export type BundlerInputData = {
   bundleSetup: {
     baseliquidityAmount: number;
     quoteliquidityAmount: number;
+    bundleTip: number;
     deployWallet: string;
     buyerCount: number;
     buyers: BuyerInfo[];
+    blockEngin: string;
   };
 };

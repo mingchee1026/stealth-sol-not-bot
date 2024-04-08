@@ -14,6 +14,7 @@
   "dependencies": {
     "@coral-xyz/anchor": "0.29.0",
     "@grammyjs/conversations": "^1.2.0",
+    "@grammyjs/files": "^1.1.0",
     "@grammyjs/i18n": "^1.0.2",
     "@grammyjs/menu": "^1.2.1",
     "@grammyjs/storage-file": "^2.4.2",
@@ -27,9 +28,9 @@
     "bigint-buffer": "^1.1.5",
     "bignumber.js": "^9.1.2",
     "dotenv": "^16.3.1",
-    "jito-ts": "^3.0.1",
     "grammy": "^1.22.0",
     "grammy-inline-menu": "9.0.0",
+    "jito-ts": "^3.0.1",
     "moment": "^2.29.4",
     "mongoose": "^8.2.4",
     "tsc-watch": "^6.2.0",

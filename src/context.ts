@@ -1,5 +1,5 @@
-import { web3 } from '@coral-xyz/anchor';
 import type { Context, SessionFlavor } from 'grammy';
+import { FileFlavor } from '@grammyjs/files';
 import { I18nFlavor } from '@grammyjs/i18n';
 // import { CutiResponse, Employee, Pengaturan } from './services/models';
 import { ConversationFlavor } from '@grammyjs/conversations';
@@ -9,6 +9,8 @@ export type SessionData = {
   step: string;
   bundleId: string;
   dbField: string;
+  blockEngine: string;
+  runningBundle: boolean;
   allUserTokens: {
     mint: string;
     name: string;
@@ -45,6 +47,8 @@ export function initialData(): SessionData {
     step: '',
     bundleId: '',
     dbField: '',
+    blockEngine: 'Amsterdam',
+    runningBundle: false,
     allUserTokens: {
       mint: 'string',
       name: 'string',
@@ -84,4 +88,5 @@ export function initialData(): SessionData {
 export type MainContext = Context &
   SessionFlavor<SessionData> &
   I18nFlavor &
-  ConversationFlavor;
+  ConversationFlavor &
+  FileFlavor<Context>;

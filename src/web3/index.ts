@@ -113,7 +113,9 @@ export type LaunchBundleInput = {
   bundleSetup: {
     baseAmount: number;
     quoteAmount: number;
+    bundleTip: number;
     buyers: { buyAmount: number; buyerAuthority: web3.Keypair }[];
+    blockEngineUrl: string;
   };
 };
 
@@ -186,11 +188,11 @@ export class Connectivity {
     );
     if (txsInfoRes.Err) {
       debug({ Err: txsInfoRes.Err });
-      return null;
+      throw txsInfoRes.Err;
     }
     if (!txsInfoRes || !txsInfoRes.Ok) {
       debug({ Err: 'Failed to prepare market transaction' });
-      return null;
+      throw 'Failed to prepare market transaction';
     }
     return txsInfoRes.Ok;
   }
@@ -230,6 +232,7 @@ export class Connectivity {
     buyTokenType: 'base' | 'quote';
     fixedSide: 'in' | 'out';
     poolKeys: LiquidityPoolKeys;
+    bundleTip: number;
   }) {
     const {
       buyersInfo,
@@ -239,6 +242,7 @@ export class Connectivity {
       buyTokenType,
       poolKeys,
       fixedSide,
+      bundleTip,
     } = input;
     const { baseDecimals, quoteDecimals } = poolInfo;
     let inToken: Token;
@@ -300,7 +304,7 @@ export class Connectivity {
       if (!accountsInfo) throw 'failed to fetch some data';
       const [buyerInfo, inAtaInfo, outAtaInfo] = accountsInfo;
       if (i == buyersInfo.length - 1) {
-        buySolCost = ENV.BUNDLE_FEE;
+        buySolCost = bundleTip; // ENV.BUNDLE_FEE;
       }
       if (!buyerInfo) throw `${buyer.toBase58()} wallet dose not enought sol`;
       if (!inAtaInfo) {
@@ -402,13 +406,16 @@ export class Connectivity {
         payer: user,
         recentSlot: slot - 1,
       });
+
     const extendInstruction = web3.AddressLookupTableProgram.extendLookupTable({
       payer: user,
       authority: user,
       lookupTable: lookupTableAddress,
       addresses,
     });
+
     const recentBlockhash = await getBlockhash(this.connection);
+
     if (!recentBlockhash) throw 'blockhash not found (luts creation)';
     const msg = new web3.TransactionMessage({
       instructions: [
@@ -420,10 +427,19 @@ export class Connectivity {
       payerKey: user,
       recentBlockhash,
     }).compileToV0Message();
+
     const tx = new web3.VersionedTransaction(msg);
+
     tx.sign(vaultSigners);
-    if (!recentBlockhash) throw 'Blockhash not found (luts creation)';
+
+    if (!recentBlockhash) {
+      throw 'Blockhash not found (luts creation)';
+    }
+
     const signedTx = await this.provider.wallet.signTransaction(tx);
+
+    debug('creating luts');
+
     const txSignature = await web3
       .sendAndConfirmRawTransaction(
         this.connection,
@@ -433,8 +449,11 @@ export class Connectivity {
         console.log({ createLookUpTableTxError });
         throw 'failed to create luts';
       });
+
     debug(`Create lut tx Signature: ${txSignature}`);
+
     await sleep(3_000);
+
     const lutInfoRes = await this.connection
       .getAddressLookupTable(lookupTableAddress)
       .catch(() => null)
@@ -480,8 +499,9 @@ export class Connectivity {
       const { baseMint, quoteMint } = marketSettings;
       finalRes.tokenAddress = baseMint.toBase58();
       finalRes.deployerAddress = user.toBase58();
+
       debug('prepare market');
-      onConsole('prepare market');
+
       // market creation
       const createMarketInfoRes = await this.bundleGetCreateMarketIxsInfo({
         baseMint,
@@ -490,15 +510,18 @@ export class Connectivity {
         tickSize: marketSettings.tickSize,
       }).catch((bundleCreateMarketError) => {
         debug(bundleCreateMarketError);
-        return null;
+        throw bundleCreateMarketError;
       });
-      if (!createMarketInfoRes)
+
+      if (!createMarketInfoRes) {
         return { Err: Web3BundleError.BUNDLER_MARKET_CREATION_FAILED };
+      }
+
       const marketId = createMarketInfoRes.marketId;
 
       // Pool
       debug('prepare pool');
-      onConsole('prepare pool');
+
       const createPoolTxInfo = await this.bundleGetCreatePoolTxInfo({
         baseMint,
         quoteMint,
@@ -519,7 +542,7 @@ export class Connectivity {
 
       // Buy
       debug('prepare buy');
-      onConsole('prepare buy');
+
       const poolKeys = this.baseRay.getPoolKeysFromCached(poolId);
       if (!poolKeys) {
         debug('failed to get poolkeys from cache');
@@ -545,6 +568,7 @@ export class Connectivity {
         poolInfo,
         poolKeys,
         fixedSide: 'in',
+        bundleTip: bundleSetup.bundleTip,
       }) //TODO: `buyTokenType` fixed
         .catch((bundleGetBuysIxsInfo) => {
           debug({ bundleGetBuysIxsInfo });
@@ -555,7 +579,7 @@ export class Connectivity {
 
       // create lookup table
       debug('prepare luts');
-      onConsole('prepare luts');
+
       const lutsAddress = [
         baseMint,
         quoteMint,
@@ -579,11 +603,12 @@ export class Connectivity {
         debug({ bundleCreateLookuptableError });
         return null;
       });
+
       if (!lutsInfo) return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
 
       // create market tx
       debug('create market tx');
-      onConsole('create market tx');
+
       await sleep(2_000);
       const createMarketRecentBlockhash = await getBlockhash(this.connection);
       if (!createMarketRecentBlockhash)
@@ -600,7 +625,7 @@ export class Connectivity {
       await sleep(400);
       // await sleep(1_000)
       debug('create pool tx');
-      onConsole('create pool tx');
+
       const createPoolBlockhash = await getBlockhash(this.connection);
       if (!createPoolBlockhash)
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
@@ -615,7 +640,7 @@ export class Connectivity {
       // buy txs
       await sleep(400);
       debug('create buy txs');
-      onConsole('create buy txs');
+
       const buyBlockhash = await getBlockhash(this.connection);
       if (!buyBlockhash)
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
@@ -629,7 +654,7 @@ export class Connectivity {
             web3.SystemProgram.transfer({
               fromPubkey: sender,
               toPubkey: jitoTipsAccount,
-              lamports: ENV.BUNDLE_FEE,
+              lamports: bundleSetup.bundleTip, // ENV.BUNDLE_FEE,
             }),
           );
         }
@@ -656,7 +681,7 @@ export class Connectivity {
 
       // bundle send
       debug('send bundle');
-      onConsole('send bundle');
+
       let bundleRes: Result<
         {
           bundleId: string;
@@ -671,13 +696,15 @@ export class Connectivity {
           [createMarketTx, createPoolTx, ...buyTxs],
           poolId,
           this.connection,
+          bundleSetup.blockEngineUrl,
         ).catch((sendBundleError) => {
           debug({ sendBundleError });
           return null;
         });
       } else {
         bundleRes = await sendBundleTest(
-          [createMarketTx, createPoolTx, ...buyTxs],
+          // [createMarketTx, createPoolTx, ...buyTxs],
+          [createPoolTx, ...buyTxs],
           poolId,
           this.connection,
         ).catch((sendBundleError) => {
@@ -687,6 +714,7 @@ export class Connectivity {
       }
 
       debug({ bundleRes });
+
       if (bundleRes?.Err) {
         const err = bundleRes.Err;
         debug({ sendBundleTestError: err });
@@ -714,11 +742,14 @@ export class Connectivity {
           };
         });
       }
+
       onConsole('Confirmed successfully!');
+
       return { Ok: finalRes };
     } catch (innerLaunchBundleError) {
       debug({ innerLaunchBundleError });
-      return { Ok: finalRes };
+      // return { Ok: finalRes };
+      throw innerLaunchBundleError;
     }
   }
 
@@ -1142,7 +1173,7 @@ export class Connectivity {
     }).compileToV0Message();
     const tx = new web3.VersionedTransaction(msg);
     tx.sign([senderAuth]);
-    const bundleRes = await sendBundle([tx], sender, connection).catch(
+    const bundleRes = await sendBundle([tx], sender, connection, '').catch(
       (sendBundleError) => {
         debug({ sendBundleError });
         return null;

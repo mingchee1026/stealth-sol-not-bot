@@ -117,6 +117,7 @@ export async function sendBundle(
   txs: web3.VersionedTransaction[],
   poolId: web3.PublicKey,
   connection: web3.Connection,
+  jitoBlockEngineUrl: string,
 ): Promise<
   Result<
     { bundleId: string; txsSignature: string[]; bundleStatus: number },
@@ -124,41 +125,59 @@ export async function sendBundle(
   >
 > {
   try {
-    const rawTxs = txs.map((e) => {
-      return Array.from(e.serialize());
-    });
+    // const rawTxs = txs.map((e) => {
+    //   return Array.from(e.serialize());
+    // });
     // const result = await axios
     //   .post('/api/sendBundle', { rawTxs: rawTxs })
     //   .catch((apiSendBundleError) => {
     //     debug({ apiSendBundleError });
     //     return null;
     //   });
-    const result = await processBundle(txs);
+    const result = await processBundle(txs, jitoBlockEngineUrl);
     if (!result) return { Err: 'failed to send bunlde(api)' };
+
     debug({ sendBundleApiRes: result });
+
     const bundleRes: Result<{ bundleId: string }, string> | undefined = result;
+
     debug({ bundleRes });
+
     let bundleId = '';
-    if (!bundleRes) return { Err: 'failed to send bunlde(api)' };
+    if (!bundleRes) {
+      return { Err: 'failed to send bunlde(api)' };
+    }
+
     if (bundleRes?.Ok) {
       await sleep(2_000);
+
       bundleId = bundleRes.Ok.bundleId;
+
       const bundleInfo = await getBundleInfo(bundleId)
         .catch(() => null)
         .then(async (res) => {
-          if (res) return res;
+          if (res) {
+            return res;
+          }
+
           await sleep(10_000);
+
           return getBundleInfo(bundleId)
             .catch(() => null)
             .then(async (res) => {
-              if (res) return res;
+              if (res) {
+                return res;
+              }
+
               await sleep(10_000);
+
               return getBundleInfo(bundleId).catch((getBunderInfoError) => {
                 debug({ getBunderInfoError });
                 return null;
               });
             });
         });
+
       if (bundleInfo) {
         const { status, transactions } = bundleInfo;
         return {
@@ -170,9 +189,13 @@ export async function sendBundle(
         };
       }
     }
+
     const err = bundleRes.Err;
+
     debug(`SendBundle Error : ${err}`);
+
     await sleep(3_000);
+
     const poolInfo = await connection
       .getAccountInfo(poolId)
       .catch(() => null)
@@ -197,9 +220,11 @@ export async function sendBundle(
               });
           });
       });
+
     if (!poolInfo) {
       return { Err: 'Bundle Failed' };
     }
+
     return {
       Ok: {
         bundleId,
@@ -210,15 +235,20 @@ export async function sendBundle(
   } catch (error) {
     debug({ innerBundleError: error });
   }
+
   return { Err: 'failed to send bunlde(api)' };
 }
 
-export default async function processBundle(txs: web3.VersionedTransaction[]) {
+export default async function processBundle(
+  txs: web3.VersionedTransaction[],
+  jitoBlockEngineUrl: string,
+) {
   try {
     const bundleResult = { pass: false, info: null as any };
     // const { rawTxs }: { rawTxs: number[][] } = req.body;
+
     const jitoClient = searcherClient(
-      ENV.JITO_BLOCK_ENGINE_URL,
+      jitoBlockEngineUrl, //ENV.JITO_BLOCK_ENGINE_URL,
       ENV.JITO_AUTH_KEYPAIR,
     );
     // const txs = rawTxs.map((e: any) => {
@@ -250,10 +280,13 @@ export default async function processBundle(txs: web3.VersionedTransaction[]) {
         return null;
       });
     });
+
     debug('Bundle Sent ...');
+
     if (!bundleId) {
       return { Err: 'Bundle transaction failed' };
     }
+
     for (let i = 0; i < 100; ++i) {
       await sleep(1_000);
       if (bundleResult.pass) {
@@ -262,6 +295,7 @@ export default async function processBundle(txs: web3.VersionedTransaction[]) {
         break;
       }
     }
+
     return { Ok: { bundleId } };
   } catch (sendBundleError) {
     debug({ sendBundleError });
@@ -320,6 +354,7 @@ export type BundleRes = {
   signer: string;
   __typename: string;
 };
+
 export async function getBundleInfo(
   bundleId: string,
 ): Promise<BundleRes | undefined> {
@@ -338,6 +373,8 @@ export async function getBundleInfo(
     debug({ fetchBundleError });
     return null;
   });
+
   const bundleResJ = await bundleRes?.json();
+
   return bundleResJ?.data?.getBundle?.bundle;
 }

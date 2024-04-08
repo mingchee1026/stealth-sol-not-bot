@@ -13,7 +13,11 @@ interface ILiquidityPool {
   baseToken: string;
   quoteToken: string;
   tokenLiquidity: number;
+  amountOfPercentage: number;
+  bundleTip: number;
+  solTxnsTip: number;
   buyerInfos: Array<IBuyerInfo>;
+  bolckEngine: string;
   timestamp: Date;
 }
 
@@ -24,7 +28,11 @@ const liquidityPoolSchema = new Schema<ILiquidityPool>({
   baseToken: { type: String, require: false },
   quoteToken: { type: String, require: false },
   tokenLiquidity: { type: Number, require: false },
+  amountOfPercentage: { type: Number, require: false },
+  bundleTip: { type: Number, require: false },
+  solTxnsTip: { type: Number, require: false },
   buyerInfos: [{ id: Number, buyAmount: Number, buyerAuthority: String }],
+  bolckEngine: { type: String, require: false },
   timestamp: {
     type: Date,
     default: Date.now,

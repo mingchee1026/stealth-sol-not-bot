@@ -51,6 +51,12 @@ async function savePoolData(bundleId: string, field: string, value: any) {
     existingPool.quoteToken = value;
   } else if (field === 'msg-input-quote-token-liquidity') {
     existingPool.tokenLiquidity = value;
+  } else if (field === 'msg-input-amount-percentage') {
+    existingPool.amountOfPercentage = value;
+  } else if (field === 'msg-input-bundle-tip') {
+    existingPool.bundleTip = value;
+  } else if (field === 'msg-input-sol-txn-tip') {
+    existingPool.solTxnsTip = value;
   } else if (field === 'msg-input-deploy-private-key') {
     existingPool.deployWallet = value;
   } else if (field === 'msg-input-buyer1-sol-amount') {
