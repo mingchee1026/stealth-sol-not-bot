@@ -49,6 +49,13 @@ msg-input-quote-token =
 msg-input-quote-token-liquidity =
   🔢 Input your <b>Quote Token Liguidity:</b>
      The amount of SOL you want to add to liquidity.
+msg-input-amount-percentage =
+  🔢 Input your <b>Amount Percentage:</b>
+     % of tokens (1-100).
+msg-input-sol-txn-tip =
+  🔢 Input your <b>Solana Transaction Tip:</b>
+msg-input-bundle-tip =
+  🔢 Input your <b>Bundle Tip:</b>
 msg-input-deploy-private-key =
   🔐 Input your <b>Deploy Wallet Private Key:</b>
 msg-input-buyer1-sol-amount =
