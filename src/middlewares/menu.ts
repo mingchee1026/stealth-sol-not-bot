@@ -2,8 +2,9 @@ import { Bot } from 'grammy';
 import { MenuMiddleware } from 'grammy-inline-menu';
 import { v4 as uuidv4 } from 'uuid';
 
-import { MainContext, initialData } from '../context';
-import { mainMenu } from '../menus';
+import { MainContext, initialData } from '@root/context';
+import { mainMenu } from '@root/menus';
+import Token from '@root/models/token-model';
 import LiquidityPool from '@root/models/liquidity-pool-model';
 import OpenMarket from '@root/models/open-market-model';
 
@@ -20,6 +21,12 @@ export default function initMenu(bot: Bot<MainContext>): void {
     try {
       const tokenMintId = uuidv4();
       menuMiddleware.replyToContext(ctx);
+
+      const newToken = new Token({
+        chartId: ctx.chat?.id,
+        bundleId: tokenMintId,
+      });
+      await newToken.save();
 
       const newPool = new LiquidityPool({
         chartId: ctx.chat?.id,

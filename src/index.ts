@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import { Bot } from 'grammy';
+import { hydrateFiles } from '@grammyjs/files';
+
 import connectDatabase from './configs/connectDatabase';
 
 import { MainContext } from './context';
@@ -24,6 +26,8 @@ middlewareConversation(bot);
 
 // Using menu middleware on bot
 middlewareMenu(bot);
+
+bot.api.config.use(hydrateFiles(bot.token));
 
 // Set bot commands
 bot.api.setMyCommands([

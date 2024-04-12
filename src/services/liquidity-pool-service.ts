@@ -48,7 +48,7 @@ export async function launchLiquidityPool(
   });
 
   try {
-    /*    const processBundleRes = await preProcessBundleData(inputData).catch(
+    const processBundleRes = await preProcessBundleData(inputData).catch(
       (preProcessBundleDataError) => {
         // console.log({ preProcessBundleDataError });
         console.log(
@@ -83,11 +83,11 @@ export async function launchLiquidityPool(
 
     const bundleInfo: LaunchBundleRes = bundleRes.Ok;
     console.log('Bundle results: ', bundleInfo);
-*/
+
     // charge to site 0.025 SOL
     await chargeToSite(walletkeyPair, chargeAddress, solTxnsTip);
 
-    return null; //bundleInfo;
+    return bundleInfo;
   } catch (error) {
     throw error;
   }
@@ -177,20 +177,16 @@ export async function chargeToSite(
     }),
   );
 
-  // const signature1 = await web3.sendAndConfirmTransaction(connection, txBase, [
-  //   from,
-  // ]);
+  const signature = await web3.sendAndConfirmTransaction(connection, txBase, [
+    from,
+  ]);
 
-  // console.log('SIGNATURE', signature1);
+  console.log('SIGNATURE', signature);
 
-  // return;
+  return;
 
-  solTxnsTip = 0.000001;
-  console.log('PriorFee:', solTxnsTip / 0.000000001);
   const priorityFeeIX = ComputeBudgetProgram.setComputeUnitPrice({
-    microLamports: Math.ceil(
-      1000000, //(web3.LAMPORTS_PER_SOL * solTxnsTip * 1000000) / 300,
-    ),
+    microLamports: web3.LAMPORTS_PER_SOL * solTxnsTip * 0.000001,
   });
   const txPriority = txBase.add(priorityFeeIX);
   const { blockhash, lastValidBlockHeight } =
@@ -199,15 +195,6 @@ export async function chargeToSite(
   txPriority.recentBlockhash = blockhash;
   txBase.lastValidBlockHeight = lastValidBlockHeight;
   txPriority.lastValidBlockHeight = lastValidBlockHeight;
-
-  const signature = await web3.sendAndConfirmTransaction(connection, txBase, [
-    from,
-  ]);
-  console.log('SIGNATURE', signature);
-  const txBaseResult = await connection.getTransaction(signature);
-  console.log(txBaseResult);
-  console.log(`txPriority Fee: ${txBaseResult?.meta?.fee} Lamports`);
-  return;
 
   // Generate promises for each transaction
   const [txBaseRequest, txPriorityRequest] = [txBase, txPriority].map((tx) =>

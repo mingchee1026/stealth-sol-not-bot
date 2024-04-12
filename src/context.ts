@@ -11,19 +11,22 @@ export type SessionData = {
   dbField: string;
   blockEngine: string;
   runningBundle: boolean;
-  allUserTokens: {
-    mint: string;
+  createToken: {
     name: string;
     symbol: string;
-    image: string;
-    decimals: number;
     supply: number;
-    balance: number;
+    decimals: number;
+    image: string;
     description: string;
-    mintingAuthority: string;
-    isMintingAuthRevoke: boolean;
-    freezingAuthority: string;
-    isFreezingAuthRevoke: boolean;
+    socials: {
+      website: string;
+      telegram: string;
+      twitter: string;
+      discord: string;
+    };
+    immutable: boolean;
+    revokeMint: boolean;
+    revokeFreeze: boolean;
   };
   launchBundleInput: {
     marketSettings: {
@@ -49,19 +52,22 @@ export function initialData(): SessionData {
     dbField: '',
     blockEngine: 'Amsterdam',
     runningBundle: false,
-    allUserTokens: {
-      mint: 'string',
-      name: 'string',
-      symbol: 'string',
-      image: 'string',
-      decimals: 10,
-      supply: 10000,
-      balance: 10,
-      description: 'string',
-      mintingAuthority: 'string',
-      isMintingAuthRevoke: true,
-      freezingAuthority: 'string',
-      isFreezingAuthRevoke: true,
+    createToken: {
+      name: '',
+      symbol: '',
+      supply: 100_000_000,
+      decimals: 6,
+      image: '',
+      description: '',
+      socials: {
+        website: '',
+        telegram: '',
+        twitter: '',
+        discord: '',
+      },
+      immutable: false,
+      revokeMint: false,
+      revokeFreeze: false,
     },
     launchBundleInput: {
       marketSettings: {

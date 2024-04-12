@@ -3,7 +3,7 @@ import { MainContext } from '../context';
 import menuBack from './general';
 
 const menu = new MenuTemplate<MainContext>(async (ctx) => {
-  return 'Input informations to create OpenMarket:';
+  return 'Input information to create OpenMarket:';
 });
 
 // menu.interact('base-token', {

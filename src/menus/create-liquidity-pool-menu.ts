@@ -175,52 +175,7 @@ menu.interact('bundle', {
     const initMsg = await ctx.reply('🟣 Intiated Deployment Transaction');
 
     try {
-      const inputData: BundlerInputData = {
-        createTokenInfo: {
-          address: '9uadnK9nZ9MoXuYP43jH4mEjdgy1F4qXnFHRRWVmWQbP',
-          supply: 100,
-        },
-        marketSettings: {
-          quoteTokenAddress: 'So11111111111111111111111111111111111111112',
-          baseLogSize: 1,
-          tickSize: 1,
-        },
-        bundleSetup: {
-          baseliquidityAmount: 100,
-          quoteliquidityAmount: 0.01,
-          bundleTip: 1500000,
-          deployWallet:
-            '26cxXRQDbbtMFmviHXMxdFJRGX8CGAbVQxwsSYcge9hRhpFSGMp1so6LFstY7fRyyArGoGqg6uXGAPDbYA6zAxp8',
-          buyerCount: 3,
-          buyers: [
-            {
-              id: 0,
-              amount: 0.001,
-              privateKey:
-                '2Dg2VAWQ2mZ1vZoYPnq8yiM5MD9eZq2hPwj5GDJy5GD8yQQAieSjd9RGrrDprdnjXsJGYNoeyY7EozssMr2yDvPt',
-            },
-            {
-              id: 1,
-              amount: 0.001,
-              privateKey:
-                '4cCMpMirkfwBy44W4PgGFM2ocDgVCocZzuCAZNMU6axbuHo7p4khZ12rdFsooFWtwzFARerCwR5kbjdEMuNeYpvN',
-            },
-            {
-              id: 2,
-              amount: 0.006,
-              privateKey:
-                '5WZWJSSndqLbWS8XoNGLKidY3eTKSjUcwsmXSqPRXA2VEm3DvFm4gfYs5Yqzh7r1hZ6AirHiKkvrcU2Fjo6sSocb',
-            },
-          ],
-          blockEngin: '',
-        },
-      };
-
-      const doBundle = await serviceLiquidityPool.launchLiquidityPool(
-        inputData,
-        0.0001,
-      );
-      /*      const bundleId = ctx.session.bundleId;
+      const bundleId = ctx.session.bundleId;
       const openMarket = await OpenMarket.findOne({ bundleId });
 
       if (
@@ -311,7 +266,7 @@ menu.interact('bundle', {
         {
           parse_mode: 'HTML',
         },
-      );*/
+      );
     } catch (error: any) {
       if (ctx.chat?.id) {
         ctx.api.deleteMessage(ctx.chat?.id, initMsg.message_id);

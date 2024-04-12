@@ -1,7 +1,7 @@
-import { web3, Wallet } from '@coral-xyz/anchor';
+import { Wallet } from '@coral-xyz/anchor';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 
-import { ENV } from '@root/configs';
+import { ENV, RPC_ENDPOINT_MAIN, RPC_ENDPOINT_DEV } from '@root/configs';
 import { Connectivity, CreateTokenInput } from '@root/web3';
 import { getKeypairFromStr } from '@root/web3/base/utils';
 import { web3ErrorToStr } from '@root/web3/errors';
@@ -18,7 +18,7 @@ export async function createToken(
 
   isLaunched = true;
 
-  const rpcEndpoint = process.env.RPC_END_POINT || '';
+  const rpcEndpoint = ENV.IN_PRODUCTION ? RPC_ENDPOINT_MAIN : RPC_ENDPOINT_DEV;
   const walletkeyPair = getKeypairFromStr(deployWallet);
 
   if (!walletkeyPair || !walletkeyPair?.publicKey) {
@@ -30,7 +30,9 @@ export async function createToken(
   const connectivity = new Connectivity({
     wallet: wallet,
     rpcEndpoint: rpcEndpoint,
-    network: WalletAdapterNetwork.Testnet,
+    network: ENV.IN_PRODUCTION
+      ? WalletAdapterNetwork.Mainnet
+      : WalletAdapterNetwork.Devnet,
   });
 
   connectivity

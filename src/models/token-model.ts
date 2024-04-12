@@ -14,6 +14,9 @@ interface IToken {
   telegram: string;
   discord: string;
   deployWallet: string;
+  immutable: boolean;
+  revokeMint: boolean;
+  revokeFreeze: boolean;
   timestamp: Date;
 }
 
@@ -31,6 +34,9 @@ const tokenSchema = new Schema<IToken>({
   telegram: { type: String, require: false },
   discord: { type: String, require: false },
   deployWallet: { type: String, require: false },
+  immutable: { type: Boolean, require: false },
+  revokeMint: { type: Boolean, require: false },
+  revokeFreeze: { type: Boolean, require: false },
   timestamp: {
     type: Date,
     default: Date.now,

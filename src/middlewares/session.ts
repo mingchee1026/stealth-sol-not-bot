@@ -8,7 +8,8 @@ export default function initSession(bot: Bot<MainContext>): void {
   bot.use(
     session({
       initial: initialData,
-      storage: new FileAdapter<SessionData>(), // new MemorySessionStorage<SessionData>(48 * 60 * 60 * 1000), //
+      // storage: new FileAdapter<SessionData>(),
+      storage: new MemorySessionStorage<SessionData>(48 * 60 * 60 * 1000),
     }),
   );
 }
