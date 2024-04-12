@@ -1,21 +1,25 @@
 # Main manu
 main-greetings =
-  Hello {$name}! 👋
+  🚀 YellowApe - Solana Token & Liquidity Creator Bot 🤖
+     <a href="https://t.me/">Telegram</a> | <a href="https://twt.com/">Twitter</a> | <a href="https://my.site.com/">Website</a>
+  
+     ⬩ SOL: <code class="monospace-text">${$total}</code>
 
-  Welcome to our chatbot:
-  The following menu is available for you to choose from:
+     Your Primary Wallet
+          ⬩ <code class="monospace-text">{$primaryWallet}</code>
+          ⬩ Balance: <code class="monospace-text">{$balance} SOL</code>
+
+     <a href='https://solscan.io/account/{$primaryWallet}'>View on Explorer</a>
 
 # Token creator
 msg-input-token-name =
-  📝 Enter <b>Token Name:</b>
+  Enter token name:
 msg-input-token-symbol =
-  📝 Enter <b>Token Symbol:</b>
-msg-input-token-decimal =
-  🔢 Please enter <b>Decimal for your token (0-10):</b>
-     The amount of SOL you want to add to liquidity.
+  Enter token symbol:
 msg-input-token-supply =
-  🔐 Please enter <b>Token Supply:</b>
-     ⚠ Do not enter more than 1.8 Billion (1800000000) If your decimal is 10
+  Enter token total supply:
+msg-input-token-decimal =
+  Enter token decimals (0-10):
 msg-input-token-logo =
   📸 Upload your logo file (Do not Compress)
      Supported formats: jpg, jpeg, png.
@@ -70,3 +74,9 @@ msg-input-buyer3-sol-amount =
   🔢 Input <b>Buyer3 SOL Amount:</b>
 msg-input-buyer3-private-key =
   🔐 Input <b>Buyer3 Private Key:</b>
+
+# Wallet manu
+wallet-menu-title =
+  Wallet ({$countOfWallet}) {$sol} SOL, TOTAL {$totalSol} SOL
+     
+  👇 Select Primary Wallet to use (Only one)
