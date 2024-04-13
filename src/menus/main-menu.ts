@@ -4,12 +4,16 @@ import { MainContext } from '../context';
 import liquidityPoolMenu from './create-liquidity-pool-menu';
 import createTokenMenu from './create-token-menu';
 import openMarketMenu from './open-market-menu';
+import walletMenu from './wallet-menu';
 
 const mainMenu = new MenuTemplate<MainContext>((ctx) => {
-  return ctx.t('main-greetings', {
+  const text = ctx.t('main-greetings', {
+    total: 173.86,
+    primaryWallet: '2C2xFrfm4ZqM44fmJavs3GEq1bFKD7etYMKZ6jGjSCKY',
+    balance: 2.35,
     name: ctx.from!.first_name,
-    parse_mode: 'HTML',
   });
+  return { text, parse_mode: 'HTML' };
 });
 
 mainMenu.submenu('token-creator', createTokenMenu, {
@@ -26,25 +30,25 @@ mainMenu.submenu('token-liquidity-pool', liquidityPoolMenu, {
 });
 
 mainMenu.submenu('remove-LP', createTokenMenu, {
-  text: 'Remove LP',
+  text: '🔻 Remove LP',
 });
 
 mainMenu.submenu('burn-tokens', openMarketMenu, {
-  text: 'Burn Tokens',
+  text: '🔥 Burn Tokens',
   joinLastRow: true,
 });
 
-mainMenu.submenu('wallet', createTokenMenu, {
-  text: 'Wallet',
+mainMenu.submenu('wallet', walletMenu, {
+  text: '💰 Wallet',
 });
 
 mainMenu.submenu('bot-settings', openMarketMenu, {
-  text: 'Bot Settings',
+  text: '⚙ Bot Settings',
   joinLastRow: true,
 });
 
 mainMenu.submenu('help-faq', createTokenMenu, {
-  text: 'Help / FAQ',
+  text: '❓ Help / FAQ',
 });
 
 export default mainMenu;

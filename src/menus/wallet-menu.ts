@@ -1,67 +1,169 @@
 import { MenuTemplate, deleteMenuFromContext } from 'grammy-inline-menu';
-import fs from 'fs';
+const { Keypair } = require('@solana/web3.js');
 
 import { MainContext } from '@root/context';
 import menuBack from './general';
-import Token from '@root/models/token-model';
-import { CreateTokenInput } from '@root/web3';
-import { serviceToken } from '@root/services';
-import { deployDataToIPFS } from '@root/web3/base/utils';
-import { ENV } from '@root/configs';
+import { getWalletsByUser } from '@root/services/wallet-service';
+import Wallet, { IWallet } from '@root/models/wallet-model';
+
+let wallets1: IWallet[] = [];
 
 const menu = new MenuTemplate<MainContext>(async (ctx) => {
-  return 'Please enter information to create a token:';
-});
+  let wallets: IWallet[] = [];
+  if (ctx.chat) {
+    wallets = await getWalletsByUser(ctx.chat?.id);
+  }
 
-async function handleOngoingBroadcast(
-  ctx: MainContext,
-  messageId: number,
-): Promise<void> {
-  await ctx.reply('text', {
-    reply_to_message_id: messageId,
-    reply_markup: {
-      remove_keyboard: true,
-    },
+  ctx.session.wallets = wallets;
+  wallets1 = wallets;
+  console.log('wallet1:', wallets1.length);
+
+  const primaryWallet = wallets.find((wallet) => wallet.isPrimary);
+  const totalSol = wallets.reduce(
+    (total, wallet) => total + (wallet.balance || 0),
+    0,
+  );
+
+  for (const wallet of wallets) {
+    console.log('wallet.publicKey:', wallet.publicKey);
+    menu.toggle(`wallet-${wallet.publicKey}`, {
+      text: ` ${wallet.publicKey} `,
+      set(ctx, choice) {
+        // Perform any necessary actions when the toggle is set
+        // For example, update session data
+        // ctx.session.createToken.immutable = !ctx.session.createToken.immutable;
+        // ctx.session.createToken.name = ctx.session.createToken.immutable.toString();
+        return true; // Return true to indicate the toggle is set
+      },
+      isSet(ctx) {
+        // Define the condition to determine if the toggle is set
+        // For example, return true if the toggle should be set based on certain criteria
+        return false;
+      },
+    });
+  }
+
+  const text = ctx.t('wallet-menu-title', {
+    countOfWallet: wallets.length,
+    sol: 0.02,
+    primaryWallet: primaryWallet?.publicKey || '',
+    totalSol: totalSol,
   });
 
-  if (ctx.callbackQuery?.data) {
-    console.log(ctx.callbackQuery?.data);
-  }
+  return { text, parse_mode: 'HTML' };
+});
+
+for (const wallet of wallets1) {
+  console.log('wallet.publicKey:', wallet.publicKey);
+  menu.toggle(`wallet-${wallet.publicKey}`, {
+    text: ` ${wallet.publicKey} `,
+    set(ctx, choice) {
+      // Perform any necessary actions when the toggle is set
+      // For example, update session data
+      // ctx.session.createToken.immutable = !ctx.session.createToken.immutable;
+      // ctx.session.createToken.name = ctx.session.createToken.immutable.toString();
+      return true; // Return true to indicate the toggle is set
+    },
+    isSet(ctx) {
+      // Define the condition to determine if the toggle is set
+      // For example, return true if the toggle should be set based on certain criteria
+      return false;
+    },
+  });
 }
 
-menu.interact('token-name', {
-  text: (ctx) => {
-    console.log('Reload menus');
-    return `(${ctx.session.createToken.name || '...'})Name`;
-  },
+menu.interact('import-wallet', {
+  text: '➕ Import Wallet',
   do: async (ctx) => {
-    ctx.session.step = 'msg-input-token-name';
-    // await ctx.conversation.enter('create-token-convo');
-
-    await handleOngoingBroadcast(ctx, ctx.message?.message_id || 0);
-
-    // const res = await ctx.reply(ctx.t(ctx.session.step), {
-    //   parse_mode: 'HTML',
-    //   reply_to_message_id: ctx.message?.message_id,
-    //   reply_markup: {
-    //     force_reply: true,
-    //     selective: true,
-    //     resize_keyboard: true,
-    //   },
-    // });
-    // await ctx.reply('Enter name:', {
-    //   reply_markup: {
-    //     keyboard: (await getKeyboard(ctx)).build(),
-    //     resize_keyboard: true,
-    //   },
-    //   parse_mode: 'Markdown',
-    // });
-    console.log('3333333333333333333333');
+    await ctx.answerCallbackQuery('go to parent menu after doing some logic');
 
     return true;
   },
 });
 
+menu.interact('connect-wallet', {
+  text: '➕ Connect Wallet',
+  do: async (ctx) => {
+    // Generate a new wallet
+    const walletKeyPair = Keypair.generate();
+    const privateKey = walletKeyPair.secretKey; //.toString();
+    const publicKey = walletKeyPair.publicKey.toBase58();
+
+    // Save user wallet info to the database
+    const wallet = new Wallet({
+      chatId: ctx.chat?.id,
+      privateKey,
+      publicKey,
+      isPrimary: false,
+    });
+
+    wallet
+      .save()
+      .then(() => console.log('User wallet info saved to the database'))
+      .catch((error) =>
+        console.error('Error saving user wallet info to the database:', error),
+      );
+
+    await ctx.reply(`🔐Your Private Key: ${privateKey}`);
+    await ctx.reply(`🔑Your Public Key: ${publicKey}`);
+
+    return '.';
+  },
+  joinLastRow: true,
+});
+
+menu.interact('create-3-wallet', {
+  text: '➕ Create 3 New Wallet',
+  do: async (ctx) => {
+    // ctx.session.step = 'msg-input-token-name';
+    // await ctx.conversation.enter('create-token-convo');
+
+    return true;
+  },
+});
+
+menu.interact('create-5-wallet', {
+  text: '➕ Create 5 New Wallet',
+  do: async (ctx) => {
+    // ctx.session.step = 'msg-input-token-name';
+    // await ctx.conversation.enter('create-token-convo');
+
+    return true;
+  },
+  joinLastRow: true,
+});
+
+menu.interact('transfer-all-sol-to-primary-wallet', {
+  text: 'Transfer All Sol To Primary Wallet',
+  do: async (ctx) => {
+    // ctx.session.step = 'msg-input-token-name';
+    // await ctx.conversation.enter('create-token-convo');
+
+    return true;
+  },
+});
+
+menu.interact('reload-list', {
+  text: 'Reload List',
+  do: async (ctx) => {
+    // ctx.session.step = 'msg-input-token-name';
+    // await ctx.conversation.enter('create-token-convo');
+
+    return true;
+  },
+});
+
+menu.interact('delete-all', {
+  text: 'Delete All',
+  do: async (ctx) => {
+    // ctx.session.step = 'msg-input-token-name';
+    // await ctx.conversation.enter('create-token-convo');
+
+    return true;
+  },
+  joinLastRow: true,
+});
+/*
 menu.interact('token-symbol', {
   text: (ctx) => {
     return `(${ctx.session.createToken.symbol || '...'})Symbol`;
@@ -160,26 +262,26 @@ menu.interact('token-twitter', {
   joinLastRow: true,
 });
 
-// menu.interact('token-discord', {
-//   text: 'Discord',
-//   do: async (ctx) => {
-//     ctx.session.step = 'msg-input-token-discord';
-//     await ctx.conversation.enter('create-token-convo');
+menu.interact('token-discord', {
+  text: 'Discord',
+  do: async (ctx) => {
+    ctx.session.step = 'msg-input-token-discord';
+    await ctx.conversation.enter('create-token-convo');
 
-//     return true;
-//   },
-//   joinLastRow: true,
-// });
+    return true;
+  },
+  joinLastRow: true,
+});
 
-// menu.interact('deploy-wallet', {
-//   text: 'Deploy Wallet (Private Key)',
-//   do: async (ctx) => {
-//     ctx.session.step = 'msg-input-token-deploy-wallet';
-//     await ctx.conversation.enter('create-token-convo');
+menu.interact('deploy-wallet', {
+  text: 'Deploy Wallet (Private Key)',
+  do: async (ctx) => {
+    ctx.session.step = 'msg-input-token-deploy-wallet';
+    await ctx.conversation.enter('create-token-convo');
 
-//     return true;
-//   },
-// });
+    return true;
+  },
+});
 
 let immutable = false;
 menu.toggle('immutable', {
@@ -187,6 +289,7 @@ menu.toggle('immutable', {
   set(ctx, choice) {
     immutable = !immutable;
     ctx.session.createToken.immutable = immutable;
+    ctx.session.createToken.name = immutable + '';
     return true;
   },
   isSet(ctx) {
@@ -252,7 +355,7 @@ menu.interact('create-token', {
       }
 
       console.log('logoUrl:', logoUrl);
-*/
+
       const tokenInfo: CreateTokenInput = {
         name: token.name,
         symbol: token.symbol,
@@ -284,6 +387,7 @@ menu.interact('create-token', {
     return true;
   },
 });
+*/
 
 menu.manualRow(menuBack);
 

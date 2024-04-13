@@ -15,7 +15,12 @@ async function createTokenConvo(
   console.log(`current step: ${ctx.session.bundleId} ${ctx.session.step}`);
   const res = await ctx.reply(ctx.t(ctx.session.step), {
     parse_mode: 'HTML',
-    reply_markup: { force_reply: true },
+    reply_to_message_id: ctx.message?.message_id,
+    reply_markup: {
+      force_reply: true,
+      selective: true,
+      resize_keyboard: true,
+    },
   });
 
   // do {

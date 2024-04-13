@@ -4,11 +4,12 @@ import { I18nFlavor } from '@grammyjs/i18n';
 // import { CutiResponse, Employee, Pengaturan } from './services/models';
 import { ConversationFlavor } from '@grammyjs/conversations';
 import { v4 as uuidv4 } from 'uuid';
+import { IWallet } from '@root/models/wallet-model';
 
 export type SessionData = {
   step: string;
   bundleId: string;
-  dbField: string;
+  wallets: Array<IWallet>;
   blockEngine: string;
   runningBundle: boolean;
   createToken: {
@@ -49,7 +50,7 @@ export function initialData(): SessionData {
   return {
     step: '',
     bundleId: '',
-    dbField: '',
+    wallets: [],
     blockEngine: 'Amsterdam',
     runningBundle: false,
     createToken: {
@@ -95,4 +96,6 @@ export type MainContext = Context &
   SessionFlavor<SessionData> &
   I18nFlavor &
   ConversationFlavor &
-  FileFlavor<Context>;
+  FileFlavor<Context> & {
+    readonly menu: any;
+  };
