@@ -1,46 +1,50 @@
 import 'dotenv/config';
-import { Bot } from 'grammy';
-import { hydrateFiles } from '@grammyjs/files';
 
-import connectDatabase from './configs/connectDatabase';
+import { ENV } from '@root/configs';
+import mongoose from 'mongoose';
 
-import { MainContext } from './context';
-import {
-  middlewareSession,
-  middlewareI18n,
-  middlewareConversation,
-  middlewareMenu,
-} from './middlewares';
+import * as bot from './bot';
+import connectDatabase from '@root/configs/connectDatabase';
+class SubstrateBot {
+  runnerHandle: any;
 
-// Create new instance bot
-const bot = new Bot<MainContext>(process.env.BOT_TOKEN!);
+  constructor() {
+    this.runnerHandle = null;
+  }
 
-// Using session middleware on bot
-middlewareSession(bot);
+  async run() {
+    // Connect to mongodb
+    await connectDatabase(ENV.MONGODB_URI);
 
-// Using i18n middleware on the bot
-middlewareI18n(bot);
+    const ret = await bot.start();
+    this.runnerHandle = ret.runnerHandle;
+  }
 
-// Using conversation middleware on bot
-middlewareConversation(bot);
+  async stop() {
+    await this.runnerHandle.stop();
+    console.log('Bot stopped ✅');
+    await mongoose.connection.close(false);
+    console.log('MongoDb connection closed ✅');
+    process.exit(0);
+  }
+}
 
-// Using menu middleware on bot
-middlewareMenu(bot);
+let substrateBot: SubstrateBot;
+async function main() {
+  substrateBot = new SubstrateBot();
+  await substrateBot.run();
 
-bot.api.config.use(hydrateFiles(bot.token));
+  process.once('SIGINT', () => {
+    if (substrateBot) {
+      substrateBot.stop();
+    }
+  });
 
-// Set bot commands
-bot.api.setMyCommands([
-  { command: 'start', description: 'Open the main menu' },
-  { command: 'reset', description: 'Reset bot' },
-]);
+  process.once('SIGTERM', () => {
+    if (substrateBot) {
+      substrateBot.stop();
+    }
+  });
+}
 
-// Starting bot
-bot.start({
-  onStart(botInfo) {
-    console.log(`Bot started and running as ${botInfo.username}... 🤖`);
-  },
-});
-
-// Connecting to MongoDB
-connectDatabase(process.env.MONGODB_CONNECTION!);
+main();

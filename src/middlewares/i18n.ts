@@ -1,13 +1,22 @@
-import { Bot } from 'grammy';
 import { I18n } from '@grammyjs/i18n';
-import { MainContext } from '../context';
+import { MainContext } from '@root/configs/context';
 
-export default function initI18n(bot: Bot<MainContext>): void {
-  // Create an instance of I18n
-  const i18n = new I18n<MainContext>({
-    defaultLocale: 'id',
-    directory: 'locales',
-  });
+const defaultLanguage = 'en';
 
-  bot.use(i18n);
-}
+const params = {
+  directory: 'locales',
+  defaultLanguage: defaultLanguage,
+  defaultLanguageOnMissing: true,
+  sessionName: 'session',
+  useSession: true,
+  allowMissing: false,
+  templateData: {
+    uppercase: (value: string) => value.toUpperCase(),
+  },
+};
+
+const i18n = new I18n<MainContext>(params);
+
+export const locales = ['en'];
+
+export default i18n;

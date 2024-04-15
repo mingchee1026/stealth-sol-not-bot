@@ -17,12 +17,6 @@ export type CreateBundleTokenInput = {
   };
 };
 
-export type CreateToken = {
-  address: string;
-  tx: string;
-  supply: number;
-};
-
 export type MarketSettings = {
   quoteTokenAddress: string;
   baseLogSize: number;

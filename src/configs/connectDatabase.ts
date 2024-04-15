@@ -1,13 +1,12 @@
 import mongoose from 'mongoose';
 
-const connectDatabase = (url: string) => {
-  mongoose.connect(url);
-
-  const db = mongoose.connection;
-  db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-  db.once('open', () => {
+const connectDatabase = async (uri: string): Promise<void> => {
+  try {
+    await mongoose.connect(uri);
     console.log('Connected to MongoDB ✅');
-  });
+  } catch (error) {
+    console.log('MongoDB connection error:', error);
+  }
 };
 
 export default connectDatabase;

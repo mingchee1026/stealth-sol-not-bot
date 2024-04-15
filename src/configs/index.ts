@@ -4,6 +4,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@coral-xyz/anchor/dist/cjs/utils/token';
 import { SystemProgram } from '@solana/web3.js';
+import Debug from 'debug';
 
 import { getKeypairFromStr } from '../web3/base/utils';
 
@@ -12,6 +13,16 @@ export const RPC_ENDPOINT_MAIN =
 export const RPC_ENDPOINT_TEST = 'https://api.testnet.solana.com';
 export const RPC_ENDPOINT_DEV = 'https://api.devnet.solana.com';
 export const RPC_ENDPOINT_LOCAL = 'http://127.0.0.1:8899';
+
+if (process.env.DEBUG) {
+  Debug.enable(process.env.DEBUG);
+}
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+if (!BOT_TOKEN) throw 'Invalid bot env';
+
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) throw 'Invalid databse env';
 
 const IS_LOCAL_NET = process.env.IS_LOCAL_NET == '1' ? true : false;
 const PINATA_API_kEY = process.env.PINATA_API_KEY;
@@ -42,6 +53,8 @@ if (
 }
 
 export const ENV = {
+  BOT_TOKEN,
+  MONGODB_URI,
   PINATA_API_kEY,
   PINATA_API_SECRET_KEY,
   PINATA_DOMAIN,
