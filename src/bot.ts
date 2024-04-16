@@ -7,7 +7,10 @@ import { MainContext } from '@root/configs/context';
 import initialSession from './middlewares/session';
 import i18n from '@root/middlewares/i18n';
 import mainMenu from '@root/composers/main';
-import walletMenu from '@root/composers/wallets';
+import { bot as walletsComposer } from '@root/composers/wallets';
+import { bot as settingsComposer } from '@root/composers/settings';
+import { bot as createTokenComposer } from '@root/composers/create-token';
+import { bot as createMarketComposer } from '@root/composers/create-market';
 
 export const Route = {
   idle: 'IDLE',
@@ -25,7 +28,10 @@ export const start = async (): Promise<{
   bot.use(initialSession);
   bot.use(i18n);
   bot.use(mainMenu);
-  bot.use(walletMenu);
+  bot.use(walletsComposer);
+  bot.use(settingsComposer);
+  bot.use(createTokenComposer);
+  bot.use(createMarketComposer);
 
   bot.catch(errorHandler);
 

@@ -9,13 +9,18 @@ import {
   LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
 
+import { getKeypairFromStr } from '@root/web3/base/utils';
 import Wallet, { IWallet } from '@root/models/wallet-model';
 import { ENV } from '@root/configs';
 import { connection } from 'mongoose';
 
-const FROM_KEY_PAIR = Keypair.fromSecretKey(new Uint8Array(secret));
 const NUM_DROPS_PER_TX = 10;
 const TX_INTERVAL = 1000;
+
+interface ITransactionList {
+  txInstruction: Transaction;
+  privateKey: string;
+}
 
 export const createWallet = async (
   chatId: number,
@@ -38,17 +43,35 @@ export const createWallet = async (
   }
 };
 
+export const createWallets = async (
+  privateKeys: IWallet[],
+): Promise<boolean> => {
+  try {
+    await Wallet.insertMany(privateKeys);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
 export const getWalletsByUser = async (chatId: number): Promise<IWallet[]> => {
   try {
     const wallets = await Wallet.find({ chatId });
+
+    const RPC_ENDPOINT = ENV.IN_PRODUCTION
+      ? ENV.RPC_ENDPOINT_MAIN
+      : ENV.RPC_ENDPOINT_DEV;
+    const connection = new Connection(RPC_ENDPOINT);
+
     const walletsWithBalance = await Promise.all(
       wallets.map(async (wallet) => {
+        const balance = await getBalanceBySOL(wallet.publicKey, connection);
         return {
           chatId: wallet.chatId,
           privateKey: wallet.privateKey,
           publicKey: wallet.publicKey,
           isPrimary: wallet.isPrimary,
-          balance: 0.2,
+          balance: balance,
         };
       }),
     );
@@ -56,6 +79,17 @@ export const getWalletsByUser = async (chatId: number): Promise<IWallet[]> => {
     return walletsWithBalance;
   } catch (error) {
     return [];
+  }
+};
+
+export const getPrimaryWallet = async (
+  chatId: number,
+): Promise<IWallet | null> => {
+  try {
+    const wallet = await Wallet.findOne({ chatId, isPrimary: true });
+    return wallet;
+  } catch (error) {
+    return null;
   }
 };
 
@@ -89,32 +123,49 @@ export const removeAllWallets = async (chatId: number): Promise<boolean> => {
 };
 
 export const sendSOLToPrimaryWallet = async (chatId: number) => {
-  console.log(`Initiating SOL drop from ${FROM_KEY_PAIR.publicKey.toString()}`);
-
-  // let primaryWallet: IWallet = null;
   let dropList: IWallet[] = [];
-
   const wallets = await Wallet.find({ chatId });
   const primaryWallet = wallets.find((wallet) => wallet.isPrimary);
+
   dropList = wallets.filter((wallet) => !wallet.isPrimary);
+
+  if (!primaryWallet) {
+    return;
+  }
+
+  console.log('Starting SOL Transfer...');
 
   const RPC_ENDPOINT = ENV.IN_PRODUCTION
     ? ENV.RPC_ENDPOINT_MAIN
     : ENV.RPC_ENDPOINT_DEV;
   const connection = new Connection(RPC_ENDPOINT);
 
-  const transactionList = generateTransactions(
-    NUM_DROPS_PER_TX,
-    dropList,
-    FROM_KEY_PAIR.publicKey,
-  );
+  for (const wallet of dropList) {
+    const fromKeypair = getKeypairFromStr(wallet.privateKey);
+    const balance = await getBalanceBySOL(wallet.publicKey, connection);
 
-  const txResults = await executeTransactions(
-    connection,
-    transactionList,
-    FROM_KEY_PAIR,
-  );
-  console.log(await txResults);
+    if (!fromKeypair || LAMPORTS_PER_SOL * balance < 50001) {
+      continue;
+    }
+
+    // Create a transfer transaction for the total balance
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: new PublicKey(wallet.publicKey),
+        toPubkey: new PublicKey(primaryWallet.publicKey),
+        lamports: LAMPORTS_PER_SOL * balance - 5000,
+      }),
+    );
+
+    // Sign and send the transaction
+    const signature = await sendAndConfirmTransaction(connection, transaction, [
+      fromKeypair,
+    ]);
+
+    console.log(
+      `Transfer SOL: ${fromKeypair.publicKey} => ${primaryWallet.publicKey}: ${balance} SOL - Signature: ${signature}`,
+    );
+  }
 };
 
 function generateTransactions(
@@ -123,9 +174,13 @@ function generateTransactions(
   primaryWallet: PublicKey,
 ): Transaction[] {
   let result: Transaction[] = [];
+
+  let privateKeys: string[] = [];
   let txInstructions: TransactionInstruction[] = dropList
     .map((drop) => {
       if (drop.balance && drop.balance > 0) {
+        privateKeys.push(drop.privateKey);
+
         return SystemProgram.transfer({
           fromPubkey: new PublicKey(drop.publicKey),
           toPubkey: primaryWallet,
@@ -180,24 +235,11 @@ async function executeTransactions(
   return result;
 }
 
-const getBalance = async (
+const getBalanceBySOL = async (
   walletAddress: string,
   connection: Connection,
-  isSOL = true,
 ) => {
-  if (!connection) {
-    const RPC_ENDPOINT = ENV.IN_PRODUCTION
-      ? ENV.RPC_ENDPOINT_MAIN
-      : ENV.RPC_ENDPOINT_DEV;
-    connection = new Connection(RPC_ENDPOINT);
-  }
-
   const balance = await connection.getBalance(new PublicKey(walletAddress));
 
-  if (isSOL) {
-    console.log(`Wallet Balance: ${balance / LAMPORTS_PER_SOL}`);
-    return balance / LAMPORTS_PER_SOL;
-  }
-
-  return balance;
+  return balance / LAMPORTS_PER_SOL;
 };

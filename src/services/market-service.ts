@@ -5,36 +5,35 @@ import { ENV, RPC_ENDPOINT_MAIN, RPC_ENDPOINT_DEV } from '@root/configs';
 import { Connectivity, CreateTokenInput } from '@root/web3';
 import { getKeypairFromStr } from '@root/web3/base/utils';
 import { web3ErrorToStr } from '@root/web3/errors';
-import Token from '@root/models/token-model';
+import OpenMarket from '@root/models/open-market-model';
 
-export async function saveToken(
-  chatId: number,
-  deployWallet: string,
-  inputData: CreateTokenInput,
-  mintAddress: string,
-  txAddress: string,
+export async function saveOpenmarket(
+  chartId: number,
+  baseMint: string,
+  quoteMint: string,
+  baseLogSize: number,
+  tickSize: number,
+  eventLength: number,
+  requestLength: number,
+  orderbookLength: number,
+  marketId: string,
 ) {
-  const token = new Token({
-    chartId: chatId,
-    name: inputData.name,
-    symbol: inputData.symbol,
-    decimals: inputData.decimals,
-    supply: inputData.supply,
-    image: inputData.image,
-    description: inputData.description,
-    socialLinks: inputData.socialLinks,
-    immutable: inputData.immutable,
-    revokeMint: inputData.revokeMint,
-    revokeFreeze: inputData.revokeFreeze,
-    deployWallet: deployWallet,
-    mintAddress: mintAddress,
-    txAddress: txAddress,
+  const openMarket = new OpenMarket({
+    chartId,
+    baseMint,
+    quoteMint,
+    baseLogSize,
+    tickSize,
+    eventLength,
+    requestLength,
+    orderbookLength,
+    marketId,
   });
 
-  await token.save();
+  await openMarket.save();
 }
 
-export async function mintToken(
+export async function createOpenmarket(
   deployWallet: string,
   inputData: CreateTokenInput,
 ): Promise<{ address: string; tx: string; err: string }> {

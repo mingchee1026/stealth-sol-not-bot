@@ -3,68 +3,68 @@ import { Composer } from 'grammy';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { IWallet } from '@root/models/wallet-model';
-import { getWalletsByUser } from '@root/services/wallet-service';
 import { command } from './constants';
-import walletMenu from './wallets';
+import { walletsMenu } from './wallets';
+import { settingsMenu } from './settings';
+import { createTokenMenu } from './create-token';
+import { createMarketMenu } from './create-market';
+import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
 
 const debug = Debug(`bot:main`);
 
 const bot = new Composer<MainContext>();
 
 const mainMenu = new Menu<MainContext>('Welcome')
-  .text((ctx) => ctx.t('label-create-token'))
-  .text((ctx) => ctx.t('label-create-market'))
+  .submenu(
+    (ctx) => ctx.t('label-create-token'),
+    'create-token-menu',
+    async (ctx) => {
+      const tokenMessage = ctx.t('create-token-title');
+      ctx.editMessageText(tokenMessage, { parse_mode: 'HTML' });
+    },
+  )
+  .submenu(
+    (ctx) => ctx.t('label-create-market'),
+    'create-market-menu',
+    async (ctx) => {
+      const tokenMessage = ctx.t('create-market-title');
+      ctx.editMessageText(tokenMessage, { parse_mode: 'HTML' });
+    },
+  )
   .row()
   .text((ctx) => ctx.t('label-add-liquidity'))
   .row()
   .text((ctx) => ctx.t('label-remove-lp'))
   .text((ctx) => ctx.t('label-burn-tokens'))
   .row()
-  .text(
+  .submenu(
     (ctx) => ctx.t('label-wallet'),
-    async (ctx: MainContext) => {
-      await ctx.api.sendMessage(ctx.chat!.id, '/wallet');
+    'wallets-menu',
+    async (ctx) => {
+      const walletsMessage = await generateWalletsMessage(ctx);
+      ctx.editMessageText(walletsMessage, { parse_mode: 'HTML' });
     },
   )
-  .text((ctx) => ctx.t('label-bot-settings'))
+  .submenu(
+    (ctx) => ctx.t('label-bot-settings'),
+    'settings-menu',
+    async (ctx) => {
+      const settingsMessage = ctx.t('settings-title');
+      ctx.editMessageText(settingsMessage, { parse_mode: 'HTML' });
+    },
+  )
   .row()
   .text((ctx) => ctx.t('label-help'));
 
+mainMenu.register(walletsMenu);
+mainMenu.register(settingsMenu);
+mainMenu.register(createTokenMenu);
+mainMenu.register(createMarketMenu);
 bot.use(mainMenu);
 
 bot.command(command.START, startCommandHandler);
 
 export default bot;
-
-async function generateWelcomeMessage(ctx: MainContext) {
-  const log = debug.extend('generateWelcomeMessage');
-
-  //   log('start: %O', ctx.message);
-
-  let wallets: IWallet[] = [];
-  if (ctx.chat) {
-    wallets = await getWalletsByUser(ctx.chat.id);
-  }
-
-  log('wallets: %O', wallets.length);
-
-  const primaryWallet = wallets.find((wallet) => wallet.isPrimary);
-  const totalSol = wallets.reduce(
-    (total, wallet) => total + (wallet.balance || 0),
-    0,
-  );
-  const primaryWalletSol = primaryWallet?.balance || 0;
-
-  let welcomeMessage: string = ctx.t('main-welcome', {
-    countOfWallet: wallets.length,
-    totalDollar: totalSol,
-    primaryWallet: primaryWallet?.publicKey || 'NOT SPECIFIED',
-    promarySol: primaryWalletSol,
-  });
-
-  return welcomeMessage;
-}
 
 async function startCommandHandler(ctx: MainContext) {
   const log = debug.extend('startCommandHandler');
@@ -73,10 +73,12 @@ async function startCommandHandler(ctx: MainContext) {
   await setBotCommands(ctx);
 
   const welcomeMessage = await generateWelcomeMessage(ctx);
-  return ctx.reply(welcomeMessage, {
+  const ret = await ctx.reply(welcomeMessage, {
     parse_mode: 'HTML',
     reply_markup: mainMenu,
   });
+
+  ctx.session.topMsgId = ret.message_id;
 }
 
 function setBotCommands(ctx: MainContext) {

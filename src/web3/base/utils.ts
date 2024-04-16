@@ -23,6 +23,17 @@ export function getKeypairFromStr(str: string): web3.Keypair | null {
   }
 }
 
+export function getKeypairFromUint8Array(
+  privateKeyArray: Uint8Array,
+): string | null {
+  try {
+    return bs58.encode(privateKeyArray);
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
+}
+
 export async function getNullableResutFromPromise<T>(
   value: Promise<T>,
   opt?: { or?: T; logError?: boolean },
