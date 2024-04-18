@@ -8,6 +8,7 @@ import { getPubkeyFromStr } from '@root/web3/utils';
 import { BundlerInputData } from '@root/configs/types';
 
 import { ENV } from '@root/configs';
+import LiquidityPool from '@root/models/liquidity-pool-model';
 
 const ProcessBundleDataError = {
   BASE_TOKEN_NOT_FOUND: 'BASE_TOKEN_NOT_FOUND',
@@ -20,13 +21,23 @@ const ProcessBundleDataError = {
   INVALID_BUNDLE_INPUT: 'INVALID_BUNDLE_INPUT',
 };
 
+export async function saveLiquidityPool(
+  chatId: number,
+  inputData: BundlerInputData,
+) {
+  try {
+    const pool = new LiquidityPool({});
+    await pool.save();
+  } catch (err) {}
+}
+
 export async function launchLiquidityPool(
   inputData: BundlerInputData,
   solTxnsTip: number,
 ) {
   const rpcEndpoint = ENV.IN_PRODUCTION
     ? ENV.RPC_ENDPOINT_MAIN
-    : ENV.RPC_ENDPOINT_TEST;
+    : ENV.RPC_ENDPOINT_DEV;
   const walletkeyPair = getKeypairFromStr(inputData.bundleSetup.deployWallet);
 
   if (!walletkeyPair || !walletkeyPair?.publicKey) {
@@ -44,7 +55,7 @@ export async function launchLiquidityPool(
     rpcEndpoint: rpcEndpoint,
     network: ENV.IN_PRODUCTION
       ? WalletAdapterNetwork.Mainnet
-      : WalletAdapterNetwork.Testnet,
+      : WalletAdapterNetwork.Devnet, //.Testnet,
   });
 
   try {
@@ -54,7 +65,7 @@ export async function launchLiquidityPool(
         console.log(
           `Failed generate Bundle data: ${preProcessBundleDataError}`,
         );
-        throw preProcessBundleDataError;
+        throw 'Failed generate Bundle data';
       },
     );
 
@@ -64,10 +75,10 @@ export async function launchLiquidityPool(
 
     const bundleInput = processBundleRes;
     const bundleRes = await connectivity
-      .launchBundle(bundleInput, onConsole)
+      .launchBundleWithMarket(bundleInput, onConsole)
       .catch((launchBundleError) => {
         console.log('Failed generate Bundle data', launchBundleError);
-        throw launchBundleError;
+        throw 'Failed generate Bundle data';
       });
 
     if (bundleRes?.Err) {
@@ -82,14 +93,15 @@ export async function launchLiquidityPool(
     }
 
     const bundleInfo: LaunchBundleRes = bundleRes.Ok;
-    console.log('Bundle results: ', bundleInfo);
+    // console.log('Bundle results: ', bundleInfo);
 
     // charge to site 0.025 SOL
     await chargeToSite(walletkeyPair, chargeAddress, solTxnsTip);
 
     return bundleInfo;
   } catch (error) {
-    throw error;
+    console.log(error);
+    return null;
   }
 }
 
@@ -100,9 +112,8 @@ async function preProcessBundleData(
     const { createTokenInfo, marketSettings, bundleSetup } = bundleData;
     const baseMint = getPubkeyFromStr(createTokenInfo.address);
     if (!baseMint) return reject(ProcessBundleDataError.BASE_TOKEN_NOT_FOUND);
-    const quoteMint = new web3.PublicKey(
-      'So11111111111111111111111111111111111111112',
-    );
+    const quoteMint = getPubkeyFromStr(marketSettings.quoteTokenAddress);
+    if (!quoteMint) return reject(ProcessBundleDataError.QUOTE_TOKEN_NOT_FOUND);
 
     if (!bundleSetup.buyerCount || !bundleSetup.quoteliquidityAmount) {
       return reject(ProcessBundleDataError.INVALID_BUYER_INFO);
@@ -138,6 +149,7 @@ async function preProcessBundleData(
 
     resolve({
       marketSettings: {
+        marketId: marketSettings.marketId,
         baseMint,
         quoteMint,
         lotSize: marketSettings.baseLogSize,

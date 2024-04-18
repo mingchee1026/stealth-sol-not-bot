@@ -1,7 +1,7 @@
 import { Schema, model } from 'mongoose';
 
 interface IToken {
-  chartId: number;
+  chatId: number;
   name: string;
   symbol: string;
   decimals: number;
@@ -24,7 +24,7 @@ interface IToken {
 }
 
 const tokenSchema = new Schema<IToken>({
-  chartId: { type: Number, required: true },
+  chatId: { type: Number, required: true },
   name: { type: String, require: false },
   symbol: { type: String, require: false },
   decimals: { type: Number, require: false },

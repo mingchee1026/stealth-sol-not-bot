@@ -24,7 +24,7 @@ import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { debug, ENV, TX_FEE } from '@root/configs';
 
 import { BaseMpl } from './base/baseMpl';
-import { BaseRay } from './base/baseRay';
+import { BaseRay, CreateMarketInput } from './base/baseRay';
 import { BaseSpl } from './base/baseSpl';
 import { Result, TxPassResult } from './base/types';
 import { calcNonDecimalValue, deployDataToIPFS, sleep } from './base/utils';
@@ -105,6 +105,7 @@ export type LaunchBundleRes = {
 
 export type LaunchBundleInput = {
   marketSettings: {
+    marketId: string;
     baseMint: web3.PublicKey;
     quoteMint: web3.PublicKey;
     lotSize: number;
@@ -178,12 +179,30 @@ export class Connectivity {
     quoteMint: web3.PublicKey;
     lotSize: number;
     tickSize: number;
+    eventQueueLength?: number;
+    orderbookLength?: number;
+    requestQueueLength?: number;
   }) {
     const user = this.provider.publicKey;
     if (!user) throw 'Wallet not found';
-    const { baseMint, quoteMint, lotSize, tickSize } = input;
+    const {
+      baseMint,
+      quoteMint,
+      lotSize,
+      tickSize,
+      eventQueueLength,
+      orderbookLength,
+      requestQueueLength,
+    } = input;
     const txsInfoRes = await this.baseRay.createMarket(
-      { baseMint, quoteMint, tickers: { lotSize, tickSize } },
+      {
+        baseMint,
+        quoteMint,
+        tickers: { lotSize, tickSize },
+        eventQueueLength,
+        orderbookLength,
+        requestQueueLength,
+      },
       user,
     );
     if (txsInfoRes.Err) {
@@ -1180,5 +1199,543 @@ export class Connectivity {
       },
     );
     debug({ bundleRes });
+  }
+
+  /***************************************************************************************** */
+  async createOpenMarket(
+    createMarketInput: CreateMarketInput,
+  ): Promise<Result<{ marketId: string; txSignature: string }, string>> {
+    try {
+      // const finalRes: LaunchBundleRes = {};
+
+      // market creation
+      const user = this.provider.publicKey;
+      const { baseMint, quoteMint, tickers } = createMarketInput;
+      // finalRes.tokenAddress = baseMint.toBase58();
+      // finalRes.deployerAddress = user.toBase58();
+
+      debug('prepare market');
+
+      // market creation
+      const createMarketInfoRes = await this.bundleGetCreateMarketIxsInfo({
+        baseMint,
+        quoteMint,
+        lotSize: tickers.lotSize,
+        tickSize: tickers.tickSize,
+        eventQueueLength: createMarketInput.eventQueueLength,
+        orderbookLength: createMarketInput.orderbookLength,
+        requestQueueLength: createMarketInput.requestQueueLength,
+      }).catch((bundleCreateMarketError) => {
+        debug(bundleCreateMarketError);
+        throw bundleCreateMarketError;
+      });
+
+      if (!createMarketInfoRes) {
+        return { Err: 'Web3BundleError.BUNDLER_MARKET_CREATION_FAILED' };
+      }
+
+      const marketId = createMarketInfoRes.marketId;
+
+      // create lookup table
+      debug('prepare luts');
+
+      const lutsAddress = [
+        baseMint,
+        quoteMint,
+        // poolKeys.baseVault,
+        // poolKeys.quoteVault,
+        // poolKeys.lpMint,
+        // poolKeys.lpVault,
+        marketId,
+        // poolKeys.marketBaseVault, poolKeys.marketQuoteVault,
+        // poolKeys.marketEventQueue,
+        // poolKeys.marketBids,
+        // poolKeys.marketAsks,
+        // poolKeys.authority,
+        // createPoolTxInfo.poolId,
+      ];
+      // const lutsInfo = await this.bundleCreateLookuptableAndMarketVaults(
+      const lutsInfo = await this.createLookupTableAndMarketVaults(
+        lutsAddress,
+        createMarketInfoRes.vaultInstructions,
+        createMarketInfoRes.vaultSigners,
+      ).catch((bundleCreateLookuptableError) => {
+        debug({ bundleCreateLookuptableError });
+        return null;
+      });
+
+      if (!lutsInfo)
+        return { Err: 'Web3BundleError.BUNDLER_FAILED_TO_PREPARE' };
+
+      // create market tx
+      debug('create market tx');
+
+      await sleep(2_000);
+      const createMarketRecentBlockhash = await getBlockhash(this.connection);
+      if (!createMarketRecentBlockhash)
+        return { Err: 'Web3BundleError.BUNDLER_FAILED_TO_PREPARE' };
+      const createMarketTxMsg = new web3.TransactionMessage({
+        instructions: [...createMarketInfoRes.marketInstructions],
+        payerKey: user,
+        recentBlockhash: createMarketRecentBlockhash,
+      }).compileToV0Message([lutsInfo]);
+      const _createMarketTx = new web3.VersionedTransaction(createMarketTxMsg);
+      _createMarketTx.sign([...createMarketInfoRes.marketSigners]);
+
+      // get user signature
+      const signedTxsInfo = await this.provider.wallet
+        .signTransaction(_createMarketTx)
+        .catch(() => null);
+      if (!signedTxsInfo)
+        return { Err: 'Web3BundleError.BUNDLER_FAILED_TO_PREPARE' };
+
+      const rawTx = Buffer.from(signedTxsInfo.serialize());
+      const txSignature = await web3
+        .sendAndConfirmRawTransaction(this.connection, rawTx)
+        .catch(async () => {
+          await sleep(2_000);
+          return web3
+            .sendAndConfirmRawTransaction(this.connection, rawTx)
+            .catch((sendRawTransactionError) => {
+              log({ sendRawTransactionError });
+              return undefined;
+            });
+        });
+
+      if (!txSignature) throw 'Tx Failed';
+
+      console.log('Confirmed successfully!');
+
+      return {
+        Ok: {
+          marketId: marketId.toBase58(),
+          txSignature,
+        },
+      };
+    } catch (innerLaunchBundleError) {
+      debug({ innerLaunchBundleError });
+      throw innerLaunchBundleError;
+    }
+  }
+
+  async launchBundleWithMarket(
+    input: LaunchBundleInput,
+    onConsole: (log: string) => void,
+  ): Promise<Result<LaunchBundleRes, Web3BundleError>> {
+    const finalRes: LaunchBundleRes = {};
+    try {
+      const jitoTipsAccount = getJitoTipsAccount();
+      if (!jitoTipsAccount) {
+        debug(`failed to get tips account`);
+        onConsole(`failed to get tips account`);
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      }
+
+      const user = this.provider.publicKey;
+      const { marketSettings, bundleSetup } = input;
+      const { baseMint, quoteMint } = marketSettings;
+      finalRes.tokenAddress = baseMint.toBase58();
+      finalRes.deployerAddress = user.toBase58();
+
+      const marketId = getPubkeyFromStr(marketSettings.marketId);
+      if (!marketId) {
+        onConsole('failed to get marketId');
+        return { Err: Web3BundleError.BUNDLER_MARKET_ID_FAILED };
+      }
+
+      // Pool
+      debug('prepare pool');
+
+      const createPoolTxInfo = await this.bundleGetCreatePoolTxInfo({
+        baseMint,
+        quoteMint,
+        baseMintAmount: bundleSetup.baseAmount,
+        quoteMintAmount: bundleSetup.quoteAmount,
+        marketId,
+      }).catch((bundleGetCreatePoolTxInfoError) => {
+        debug({ bundleGetCreatePoolTxInfoError });
+        return null;
+      });
+
+      if (!createPoolTxInfo) {
+        return { Err: Web3BundleError.BUNDLER_POOL_TX_SETUP_FAILED };
+      }
+
+      const {
+        poolId,
+        baseAmount: initialBaseAmount,
+        quoteAmount: initialQuoteAmount,
+      } = createPoolTxInfo;
+
+      // Buy
+      debug('prepare buy');
+
+      const poolKeys = this.baseRay.getPoolKeysFromCached(poolId);
+      if (!poolKeys) {
+        debug('failed to get poolkeys from cache');
+        onConsole('failed to get poolkeys from cache');
+        return { Err: Web3BundleError.BUNDLER_BUY_TX_SETUP_FAILED };
+      }
+      const poolInfo = {
+        baseDecimals: poolKeys.baseDecimals,
+        quoteDecimals: poolKeys.quoteDecimals,
+        lpDecimals: poolKeys.lpDecimals,
+        lpSupply: new BN(0),
+        baseReserve: initialBaseAmount,
+        quoteReserve: initialQuoteAmount,
+        startTime: null as any,
+        status: null as any,
+      };
+      const buyersInfo = bundleSetup.buyers;
+      const buysTxInfo = await this.bundleGetBuysIxsInfo({
+        baseMint,
+        quoteMint,
+        buyersInfo,
+        buyTokenType: 'base',
+        poolInfo,
+        poolKeys,
+        fixedSide: 'in',
+        bundleTip: bundleSetup.bundleTip,
+      }) //TODO: `buyTokenType` fixed
+        .catch((bundleGetBuysIxsInfo) => {
+          debug({ bundleGetBuysIxsInfo });
+          return null;
+        });
+      if (!buysTxInfo)
+        return { Err: Web3BundleError.BUNDLER_BUY_TX_SETUP_FAILED };
+
+      // create lookup table
+      debug('prepare luts');
+
+      const lutsAddress = [
+        baseMint,
+        quoteMint,
+        poolKeys.baseVault,
+        poolKeys.quoteVault,
+        poolKeys.lpMint,
+        poolKeys.lpVault,
+        marketId,
+        // poolKeys.marketBaseVault, poolKeys.marketQuoteVault,
+        poolKeys.marketEventQueue,
+        poolKeys.marketBids,
+        poolKeys.marketAsks,
+        poolKeys.authority,
+        createPoolTxInfo.poolId,
+      ];
+
+      const lutsInfo = await this.bundleCreateLookuptable(lutsAddress).catch(
+        (bundleCreateLookuptableError) => {
+          debug({ bundleCreateLookuptableError });
+          return null;
+        },
+      );
+
+      if (!lutsInfo) return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+
+      // create pool tx
+      await sleep(2_000);
+      // await sleep(1_000)
+      debug('create pool tx');
+
+      const createPoolBlockhash = await getBlockhash(this.connection);
+      if (!createPoolBlockhash)
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      const createPoolTxMsg = new web3.TransactionMessage({
+        instructions: createPoolTxInfo.ixs,
+        payerKey: user,
+        recentBlockhash: createPoolBlockhash,
+      }).compileToV0Message();
+      const _createPoolTx = new web3.VersionedTransaction(createPoolTxMsg);
+      _createPoolTx.sign(createPoolTxInfo.signers);
+
+      // buy txs
+      await sleep(400);
+      debug('create buy txs');
+
+      const buyBlockhash = await getBlockhash(this.connection);
+      if (!buyBlockhash)
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      const buyTxs: web3.VersionedTransaction[] = [];
+      for (let i = 0; i < buysTxInfo.length; ++i) {
+        const txInfo = buysTxInfo[i];
+        const { buyerAuthority, ixs } = txInfo;
+        if (i == buysTxInfo.length - 1) {
+          const sender = buyerAuthority[buyerAuthority.length - 1].publicKey;
+          ixs.push(
+            web3.SystemProgram.transfer({
+              fromPubkey: sender,
+              toPubkey: jitoTipsAccount,
+              lamports: bundleSetup.bundleTip, // ENV.BUNDLE_FEE,
+            }),
+          );
+        }
+        const buyTxMsg = new web3.TransactionMessage({
+          instructions: ixs,
+          payerKey: buyerAuthority[0].publicKey,
+          recentBlockhash: buyBlockhash,
+        }).compileToV0Message([lutsInfo]);
+        const tx = new web3.VersionedTransaction(buyTxMsg);
+        tx.sign(buyerAuthority);
+        buyTxs.push(tx);
+      }
+      const recentBlockhashBundle = await getBlockhash(this.connection);
+      if (!recentBlockhashBundle)
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+
+      // get user signature
+      const createPoolTx = await this.provider.wallet
+        .signTransaction(_createPoolTx)
+        .catch(() => null);
+      if (!createPoolTx)
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+
+      // bundle send
+      debug('send bundle');
+
+      let bundleRes: Result<
+        {
+          bundleId: string;
+          txsSignature: string[];
+          bundleStatus: number;
+        },
+        string
+      > | null = null;
+
+      if (this.network == WalletAdapterNetwork.Mainnet) {
+        bundleRes = await sendBundle(
+          [createPoolTx, ...buyTxs],
+          poolId,
+          this.connection,
+          bundleSetup.blockEngineUrl,
+        ).catch((sendBundleError) => {
+          debug({ sendBundleError });
+          return null;
+        });
+      } else {
+        bundleRes = await sendBundleTest(
+          // [createMarketTx, createPoolTx, ...buyTxs],
+          [createPoolTx, ...buyTxs],
+          poolId,
+          this.connection,
+        ).catch((sendBundleError) => {
+          debug({ sendBundleError });
+          return null;
+        });
+      }
+
+      debug({ bundleRes });
+
+      if (bundleRes?.Err) {
+        const err = bundleRes.Err;
+        debug({ sendBundleTestError: err });
+        //TODO: verification failed
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_SEND };
+      }
+      if (!bundleRes || !bundleRes.Ok) {
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_SEND };
+      }
+      {
+        const { bundleId, bundleStatus, txsSignature } = bundleRes.Ok;
+        finalRes.marketId = marketId.toBase58();
+        finalRes.poolId = poolId.toBase58();
+        finalRes.bundleRes = {
+          bundleId,
+          bundleStatus,
+          marketCreateTxSignature: '',
+          poolCreateTxSignature: txsSignature[0],
+          buyTxsSignature: txsSignature.splice(1),
+        };
+        finalRes.buyersInfo = buyersInfo.map((e) => {
+          return {
+            address: e.buyerAuthority.publicKey.toBase58(),
+            amount: e.buyAmount,
+          };
+        });
+      }
+
+      onConsole('Confirmed successfully!');
+
+      return { Ok: finalRes };
+    } catch (innerLaunchBundleError) {
+      debug({ innerLaunchBundleError });
+      // return { Ok: finalRes };
+      throw innerLaunchBundleError;
+    }
+  }
+
+  private async bundleCreateLookuptable(
+    addresses: web3.PublicKey[],
+    // initMarketVaultsIxs: web3.TransactionInstruction[],
+    // vaultSigners: web3.Signer[],
+  ) {
+    const user = this.provider.publicKey;
+    const slot = await this.connection.getSlot();
+    addresses.push(web3.AddressLookupTableProgram.programId);
+    const [lookupTableInst, lookupTableAddress] =
+      web3.AddressLookupTableProgram.createLookupTable({
+        authority: user,
+        payer: user,
+        recentSlot: slot - 1,
+      });
+
+    const extendInstruction = web3.AddressLookupTableProgram.extendLookupTable({
+      payer: user,
+      authority: user,
+      lookupTable: lookupTableAddress,
+      addresses,
+    });
+
+    const recentBlockhash = await getBlockhash(this.connection);
+
+    if (!recentBlockhash) throw 'blockhash not found (luts creation)';
+    const msg = new web3.TransactionMessage({
+      instructions: [
+        incTxFeeIx,
+        lookupTableInst,
+        extendInstruction,
+        // ...initMarketVaultsIxs,
+      ],
+      payerKey: user,
+      recentBlockhash,
+    }).compileToV0Message();
+
+    const tx = new web3.VersionedTransaction(msg);
+
+    // tx.sign(vaultSigners);
+
+    if (!recentBlockhash) {
+      throw 'Blockhash not found (luts creation)';
+    }
+
+    const signedTx = await this.provider.wallet.signTransaction(tx);
+
+    debug('creating luts');
+
+    const txSignature = await web3
+      .sendAndConfirmRawTransaction(
+        this.connection,
+        Buffer.from(signedTx.serialize()),
+      )
+      .catch((createLookUpTableTxError) => {
+        console.log({ createLookUpTableTxError });
+        throw 'failed to create luts';
+      });
+
+    debug(`Create lut tx Signature: ${txSignature}`);
+
+    await sleep(3_000);
+
+    const lutInfoRes = await this.connection
+      .getAddressLookupTable(lookupTableAddress)
+      .catch(() => null)
+      .then(async (lutsInfo) => {
+        if (lutsInfo?.value) return lutsInfo;
+        await sleep(15_000);
+        return await this.connection
+          .getAddressLookupTable(lookupTableAddress)
+          .catch(() => null)
+          .then(async (lutsInfo) => {
+            if (lutsInfo?.value) return lutsInfo;
+            await sleep(10_000);
+            return await this.connection
+              .getAddressLookupTable(lookupTableAddress)
+              .catch(() => null)
+              .then(async (lutsInfo) => {
+                if (lutsInfo?.value) return lutsInfo;
+                throw 'failed to create lut info';
+              });
+          });
+      });
+    const lutInfo = lutInfoRes.value;
+    if (!lutInfo) throw 'failed to get luts';
+    return lutInfo;
+  }
+
+  private async createLookupTableAndMarketVaults(
+    addresses: web3.PublicKey[],
+    initMarketVaultsIxs: web3.TransactionInstruction[],
+    vaultSigners: web3.Signer[],
+  ) {
+    const user = this.provider.publicKey;
+    const slot = await this.connection.getSlot();
+    addresses.push(web3.AddressLookupTableProgram.programId);
+    const [lookupTableInst, lookupTableAddress] =
+      web3.AddressLookupTableProgram.createLookupTable({
+        authority: user,
+        payer: user,
+        recentSlot: slot - 1,
+      });
+
+    const extendInstruction = web3.AddressLookupTableProgram.extendLookupTable({
+      payer: user,
+      authority: user,
+      lookupTable: lookupTableAddress,
+      addresses,
+    });
+
+    const recentBlockhash = await getBlockhash(this.connection);
+
+    if (!recentBlockhash) throw 'blockhash not found (luts creation)';
+    const msg = new web3.TransactionMessage({
+      instructions: [
+        // incTxFeeIx,
+        lookupTableInst,
+        extendInstruction,
+        ...initMarketVaultsIxs,
+      ],
+      payerKey: user,
+      recentBlockhash,
+    }).compileToV0Message();
+
+    const tx = new web3.VersionedTransaction(msg);
+
+    tx.sign(vaultSigners);
+
+    if (!recentBlockhash) {
+      throw 'Blockhash not found (luts creation)';
+    }
+
+    const signedTx = await this.provider.wallet.signTransaction(tx);
+
+    debug('creating luts');
+
+    const txSignature = await web3
+      .sendAndConfirmRawTransaction(
+        this.connection,
+        Buffer.from(signedTx.serialize()),
+      )
+      .catch((createLookUpTableTxError) => {
+        console.log({ createLookUpTableTxError });
+        throw 'failed to create luts';
+      });
+
+    debug(`Create lut tx Signature: ${txSignature}`);
+
+    await sleep(3_000);
+
+    const lutInfoRes = await this.connection
+      .getAddressLookupTable(lookupTableAddress)
+      .catch(() => null)
+      .then(async (lutsInfo) => {
+        if (lutsInfo?.value) return lutsInfo;
+        await sleep(15_000);
+        return await this.connection
+          .getAddressLookupTable(lookupTableAddress)
+          .catch(() => null)
+          .then(async (lutsInfo) => {
+            if (lutsInfo?.value) return lutsInfo;
+            await sleep(10_000);
+            return await this.connection
+              .getAddressLookupTable(lookupTableAddress)
+              .catch(() => null)
+              .then(async (lutsInfo) => {
+                if (lutsInfo?.value) return lutsInfo;
+                throw 'failed to create lut info';
+              });
+          });
+      });
+    const lutInfo = lutInfoRes.value;
+    if (!lutInfo) throw 'failed to get luts';
+    return lutInfo;
   }
 }

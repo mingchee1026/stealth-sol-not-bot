@@ -97,3 +97,9 @@ const log = console.log;
 export const debug = log;
 export const info = log;
 export const error = log;
+
+export const QUOTE_ADDRESS = {
+  SOL_ADDRESS: 'So11111111111111111111111111111111111111112',
+  USDC_ADDRESS: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  USDT_ADDRESS: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+};

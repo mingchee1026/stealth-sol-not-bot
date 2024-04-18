@@ -1,7 +1,7 @@
 import { Schema, model } from 'mongoose';
 
 interface IOpenMarket {
-  chartId: number;
+  chatId: number;
   baseMint: string;
   quoteMint: string;
   baseLogSize: number;
@@ -10,11 +10,12 @@ interface IOpenMarket {
   requestLength: number;
   orderbookLength: number;
   marketId: string;
+  txAddress: string;
   timestamp: Date;
 }
 
 const openMarketSchema = new Schema<IOpenMarket>({
-  chartId: { type: Number, required: true },
+  chatId: { type: Number, required: true },
   baseMint: { type: String, required: true },
   quoteMint: { type: String, required: true },
   baseLogSize: { type: Number, require: true },
@@ -23,6 +24,7 @@ const openMarketSchema = new Schema<IOpenMarket>({
   requestLength: { type: Number, require: false },
   orderbookLength: { type: Number, require: false },
   marketId: { type: String, required: false },
+  txAddress: { type: String, required: false },
   timestamp: {
     type: Date,
     default: Date.now,

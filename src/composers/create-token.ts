@@ -346,7 +346,7 @@ async function fireMintTokenHandler(ctx: MainContext) {
       socialLinks: ctx.session.createToken.socials,
     };
 
-    debug(tokenInfo);
+    // debug(tokenInfo);
 
     const deployWallet = await getPrimaryWallet(ctx.chat!.id);
     if (!deployWallet) {
@@ -378,6 +378,7 @@ async function fireMintTokenHandler(ctx: MainContext) {
       ret.tx,
     );
   } catch (err: any) {
+    console.log(err);
     await ctx.reply('Token minting failed.');
   }
 }

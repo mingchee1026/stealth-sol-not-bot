@@ -14,24 +14,41 @@ export async function saveToken(
   mintAddress: string,
   txAddress: string,
 ) {
-  const token = new Token({
-    chartId: chatId,
-    name: inputData.name,
-    symbol: inputData.symbol,
-    decimals: inputData.decimals,
-    supply: inputData.supply,
-    image: inputData.image,
-    description: inputData.description,
-    socialLinks: inputData.socialLinks,
-    immutable: inputData.immutable,
-    revokeMint: inputData.revokeMint,
-    revokeFreeze: inputData.revokeFreeze,
-    deployWallet: deployWallet,
-    mintAddress: mintAddress,
-    txAddress: txAddress,
-  });
+  try {
+    const token = new Token({
+      chatId: chatId,
+      name: inputData.name,
+      symbol: inputData.symbol,
+      decimals: inputData.decimals,
+      supply: inputData.supply,
+      image: inputData.image,
+      description: inputData.description,
+      socialLinks: inputData.socialLinks,
+      immutable: inputData.immutable,
+      revokeMint: inputData.revokeMint,
+      revokeFreeze: inputData.revokeFreeze,
+      deployWallet: deployWallet,
+      mintAddress: mintAddress,
+      txAddress: txAddress,
+    });
 
-  await token.save();
+    await token.save();
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+export async function getMintToken(chatId: number, mintAddress: string) {
+  try {
+    const mintedToken = await Token.findOne({
+      chatId,
+      mintAddress,
+    });
+
+    return mintedToken;
+  } catch (err) {
+    console.log(err);
+  }
 }
 
 export async function mintToken(

@@ -51,6 +51,7 @@ export type BundlerInputData = {
     supply: number;
   };
   marketSettings: {
+    marketId: string;
     quoteTokenAddress: string;
     baseLogSize: number;
     tickSize: number;

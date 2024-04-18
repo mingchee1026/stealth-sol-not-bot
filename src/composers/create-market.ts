@@ -8,6 +8,8 @@ import { generateWelcomeMessage } from './helpers';
 import { getPrimaryWallet } from '@root/services/wallet-service';
 import { CreateTokenInput } from '@root/web3';
 import { serviceOpenmarket } from '@root/services';
+import { saveOpenmarket } from '@root/services/market-service';
+import { QUOTE_ADDRESS } from '@root/configs';
 
 export enum Route {
   MARKET_BASE_TOKEN = 'CREATE_MARKET|MARKET_BASE_TOKEN',
@@ -27,7 +29,7 @@ const router = new Router<MainContext>((ctx) => ctx.session.step);
 const createMarketMenu = new Menu<MainContext>('create-market-menu')
   .text((ctx) => ctx.t('label-token-address'), inputBaseTokenCbQH)
   .row()
-  .text((ctx) => `--- ${ctx.t('label-base-token')}) ---`)
+  .text((ctx) => `--- ${ctx.t('label-base-token')} ---`)
   .row()
   .text(
     async (ctx: any) => {
@@ -53,7 +55,7 @@ const createMarketMenu = new Menu<MainContext>('create-market-menu')
   .submenu((ctx) => ctx.t('label-lot-size'), 'custom-lot-menu')
   .submenu((ctx) => ctx.t('label-tick-size'), 'custom-tick-menu')
   .row()
-  .text((ctx) => `--- ${ctx.t('label-advance-options')}) ---`)
+  .text((ctx) => `--- ${ctx.t('label-advance-options')} ---`)
   .row()
   .text((ctx) => ctx.t('label-event-length'), inputEventLengthCbQH)
   .text((ctx) => ctx.t('label-request-length'), inputRequestLengthCbQH)
@@ -226,7 +228,7 @@ async function fireMarketInfomationRouteHandler(ctx: MainContext) {
         ctx.session.createMarket.eventLength = Number(text);
         break;
       case Route.MARKET_REQUEST_LENGTH:
-        ctx.session.createMarket.eventLength = Number(text);
+        ctx.session.createMarket.requestLength = Number(text);
         break;
       case Route.MARKET_ORDERBOOK_LENGTH:
         ctx.session.createMarket.orderbookLength = Number(text);
@@ -262,20 +264,7 @@ async function fireMarketInfomationRouteHandler(ctx: MainContext) {
 
 async function fireCreateMarketCbQH(ctx: MainContext) {
   try {
-    /*  const tokenInfo: CreateTokenInput = {
-      name: 'test', //ctx.session.createToken.name,
-      symbol: 'test', //ctx.session.createToken.symbol,
-      decimals: 6, //ctx.session.createToken.decimals,
-      supply: 1000, //ctx.session.createToken.supply,
-      image: '', //ctx.session.createToken.image,
-      description: '', //ctx.session.createToken.description,
-      immutable: ctx.session.createToken.immutable,
-      revokeMint: ctx.session.createToken.revokeMint,
-      revokeFreeze: ctx.session.createToken.revokeFreeze,
-      socialLinks: ctx.session.createToken.socials,
-    };
-
-    debug(tokenInfo);
+    // console.log(ctx.session.createMarket);
 
     const deployWallet = await getPrimaryWallet(ctx.chat!.id);
     if (!deployWallet) {
@@ -283,30 +272,50 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
       return;
     }
 
-    const ret = await serviceToken.mintToken(
-      deployWallet.privateKey,
-      tokenInfo,
-    );
+    const quoteMint =
+      ctx.session.createMarket.quoteMint === 'SOL'
+        ? QUOTE_ADDRESS.SOL_ADDRESS
+        : ctx.session.createMarket.quoteMint === 'USDT'
+          ? QUOTE_ADDRESS.USDT_ADDRESS
+          : QUOTE_ADDRESS.USDC_ADDRESS;
 
-    if (ret.err) {
-      await ctx.reply(ret.err);
+    const ret = await serviceOpenmarket.createOpenMarket({
+      baseMint: ctx.session.createMarket.baseMint,
+      quoteMint,
+      lotSize: ctx.session.createMarket.baseLogSize,
+      tickSize: ctx.session.createMarket.tickSize,
+      eventQueueLength: ctx.session.createMarket.eventLength,
+      orderbookLength: ctx.session.createMarket.orderbookLength,
+      requestQueueLength: ctx.session.createMarket.requestLength,
+      deployWallet: deployWallet.privateKey,
+      solTxnsTip: 0.0001,
+    });
+
+    if (!ret) {
+      throw 'Failed create market';
     } else {
       await ctx.reply(
-        `Token successfully created.
-        Token URL:       https://explorer.solana.com/address/${ret.address}
-        Transaction URL: https://explorer.solana.com/tx/${ret.tx}`,
+        `Market successfully created.
+        Market Id:       ${ret.marketId}
+        <a href="https://openbook-explorer.xyz/market/${ret.marketId}?network=devnet">To Market</a>
+        Transaction URL: https://explorer.solana.com/tx/${ret.txSignature}`,
         { parse_mode: 'HTML' },
       );
     }
 
-    await saveToken(
+    await saveOpenmarket(
       ctx.chat!.id,
-      deployWallet.publicKey,
-      tokenInfo,
-      ret.address,
-      ret.tx,
-    );*/
+      ctx.session.createMarket.baseMint,
+      ctx.session.createMarket.quoteMint,
+      ctx.session.createMarket.baseLogSize,
+      ctx.session.createMarket.tickSize,
+      ctx.session.createMarket.eventLength,
+      ctx.session.createMarket.requestLength,
+      ctx.session.createMarket.orderbookLength,
+      ret.marketId,
+      ret.txSignature,
+    );
   } catch (err: any) {
-    await ctx.reply('Token minting failed.');
+    await ctx.reply('Failed create market.');
   }
 }

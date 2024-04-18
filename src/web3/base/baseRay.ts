@@ -95,6 +95,9 @@ export type CreateMarketInput = {
     lotSize: number;
     tickSize: number;
   };
+  eventQueueLength?: number;
+  orderbookLength?: number;
+  requestQueueLength?: number;
 };
 
 export type AddLiquidityInput = {
@@ -618,9 +621,9 @@ export class BaseRay {
     );
     const { totalEventQueueSize, totalOrderbookSize, totalRequestQueueSize } =
       useSerumMarketAccountSizes({
-        eventQueueLength: EVENT_QUEUE_LENGTH,
-        requestQueueLength: REQUEST_QUEUE_LENGTH,
-        orderbookLength: ORDERBOOK_LENGTH,
+        eventQueueLength: input.eventQueueLength || EVENT_QUEUE_LENGTH,
+        requestQueueLength: input.requestQueueLength || REQUEST_QUEUE_LENGTH,
+        orderbookLength: input.orderbookLength || ORDERBOOK_LENGTH,
       });
     // create request queue
     marketInstructions.push(
@@ -818,14 +821,15 @@ export class BaseRay {
         userQuoteAta,
       ])
       .catch(() => [null, null, null, null]);
+
     if (!baseMintAccountInfo || !quoteMintAccountInfo) {
-      return { Err: 'Not enough fund to create pool' };
+      return { Err: 'Not enough fund to create pool 1' };
     }
 
     const cachedMarketState = this.cachedMarketInfo.get(
       input.marketId.toBase58(),
     );
-    let marketOwner = cachedMarketState.programId;
+    let marketOwner = cachedMarketState?.programId;
     let marketState = cachedMarketState;
     if (!cachedMarketState) {
       if (!marketAccountInfo) return { Err: 'Market not found' };
@@ -835,8 +839,15 @@ export class BaseRay {
       );
     }
 
+    ////////////////////
+    console.log('marketOwner:', marketOwner);
+    console.log('marketState:', marketState);
+    console.log(input.baseMint.toBase58(), NATIVE_MINT.toBase58());
+    console.log(userBaseAtaInfo);
+    /////////////////////
+
     if (input.baseMint.toBase58() != NATIVE_MINT.toBase58() && !userBaseAtaInfo)
-      return { Err: 'Not enough fund to create pool' };
+      return { Err: 'Not enough fund to create pool 2' };
     else {
       if (input.baseMint.toBase58() == NATIVE_MINT.toBase58()) {
         const todo = web3.PublicKey.default;
@@ -866,7 +877,7 @@ export class BaseRay {
       input.quoteMint.toBase58() != NATIVE_MINT.toBase58() &&
       !userQuoteAtaInfo
     )
-      return { Err: 'Not enough fund to create pool' };
+      return { Err: 'Not enough fund to create pool 3' };
     else {
       if (input.quoteMint.toBase58() == NATIVE_MINT.toBase58()) {
         const todo = web3.PublicKey.default;

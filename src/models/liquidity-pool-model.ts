@@ -7,32 +7,28 @@ interface IBuyerInfo {
 }
 
 interface ILiquidityPool {
-  chartId: number;
-  bundleId: string;
-  deployWallet: string;
+  chatId: number;
   baseToken: string;
   quoteToken: string;
   tokenLiquidity: number;
   amountOfPercentage: number;
-  bundleTip: number;
-  solTxnsTip: number;
   buyerInfos: Array<IBuyerInfo>;
   bolckEngine: string;
+  deployWallet: string;
+  bundleId: string;
   timestamp: Date;
 }
 
 const liquidityPoolSchema = new Schema<ILiquidityPool>({
-  chartId: { type: Number, required: true },
-  bundleId: { type: String, required: true },
-  deployWallet: { type: String, require: false },
+  chatId: { type: Number, required: true },
   baseToken: { type: String, require: false },
   quoteToken: { type: String, require: false },
   tokenLiquidity: { type: Number, require: false },
   amountOfPercentage: { type: Number, require: false },
-  bundleTip: { type: Number, require: false },
-  solTxnsTip: { type: Number, require: false },
   buyerInfos: [{ id: Number, buyAmount: Number, buyerAuthority: String }],
   bolckEngine: { type: String, require: false },
+  deployWallet: { type: String, require: false },
+  bundleId: { type: String, required: true },
   timestamp: {
     type: Date,
     default: Date.now,

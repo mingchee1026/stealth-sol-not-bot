@@ -8,6 +8,7 @@ import { walletsMenu } from './wallets';
 import { settingsMenu } from './settings';
 import { createTokenMenu } from './create-token';
 import { createMarketMenu } from './create-market';
+import { createPoolMenu } from './create-pool';
 import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
 
 const debug = Debug(`bot:main`);
@@ -32,7 +33,14 @@ const mainMenu = new Menu<MainContext>('Welcome')
     },
   )
   .row()
-  .text((ctx) => ctx.t('label-add-liquidity'))
+  .submenu(
+    (ctx) => ctx.t('label-add-liquidity'),
+    'create-pool-menu',
+    async (ctx) => {
+      const tokenMessage = ctx.t('create-pool-title');
+      ctx.editMessageText(tokenMessage, { parse_mode: 'HTML' });
+    },
+  )
   .row()
   .text((ctx) => ctx.t('label-remove-lp'))
   .text((ctx) => ctx.t('label-burn-tokens'))
@@ -60,6 +68,7 @@ mainMenu.register(walletsMenu);
 mainMenu.register(settingsMenu);
 mainMenu.register(createTokenMenu);
 mainMenu.register(createMarketMenu);
+mainMenu.register(createPoolMenu);
 bot.use(mainMenu);
 
 bot.command(command.START, startCommandHandler);
