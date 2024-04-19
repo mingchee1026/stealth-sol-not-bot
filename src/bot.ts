@@ -12,6 +12,8 @@ import { bot as settingsComposer } from '@root/composers/settings';
 import { bot as createTokenComposer } from '@root/composers/create-token';
 import { bot as createMarketComposer } from '@root/composers/create-market';
 import { bot as createPoolComposer } from '@root/composers/create-pool';
+import { bot as removeLiquidityComposer } from '@root/composers/remove_liquidity';
+import { bot as burnLiquidityComposer } from '@root/composers/burn-liquidity';
 
 export const Route = {
   idle: 'IDLE',
@@ -34,6 +36,8 @@ export const start = async (): Promise<{
   bot.use(createTokenComposer);
   bot.use(createMarketComposer);
   bot.use(createPoolComposer);
+  bot.use(removeLiquidityComposer);
+  bot.use(burnLiquidityComposer);
 
   bot.catch(errorHandler);
 
