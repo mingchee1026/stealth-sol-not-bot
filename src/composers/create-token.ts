@@ -77,7 +77,7 @@ const createTokenMenu = new Menu<MainContext>('create-token-menu')
   .text((ctx) => ctx.t('label-mint-token'), fireMintTokenHandler)
   .row()
   // .text('🔙  Close', doneCbQH);
-  .back('❌  Close', async (ctx) => {
+  .back('🔙  Close', async (ctx) => {
     const welcomeMessage = await generateWelcomeMessage(ctx);
     await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
   });
@@ -363,9 +363,8 @@ async function fireMintTokenHandler(ctx: MainContext) {
       await ctx.reply(ret.err);
     } else {
       await ctx.reply(
-        `Token successfully created.
-        Token URL:       https://explorer.solana.com/address/${ret.address}
-        Transaction URL: https://explorer.solana.com/tx/${ret.tx}`,
+        `🟢 Token successfully created. Check <a href="https://explorer.solana.com/address/${ret.address}">here</a>.
+           Transaction URL: https://explorer.solana.com/tx/${ret.tx}`,
         { parse_mode: 'HTML' },
       );
     }
@@ -379,6 +378,6 @@ async function fireMintTokenHandler(ctx: MainContext) {
     );
   } catch (err: any) {
     console.log(err);
-    await ctx.reply('Token minting failed.');
+    await ctx.reply('🔴 Token minting failed.');
   }
 }

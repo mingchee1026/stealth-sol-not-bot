@@ -29,7 +29,7 @@ const router = new Router<MainContext>((ctx) => ctx.session.step);
 const createMarketMenu = new Menu<MainContext>('create-market-menu')
   .text((ctx) => ctx.t('label-token-address'), inputBaseTokenCbQH)
   .row()
-  .text((ctx) => `--- ${ctx.t('label-base-token')} ---`)
+  .text((ctx) => `--- ${ctx.t('label-quote-token')} ---`)
   .row()
   .text(
     async (ctx: any) => {
@@ -55,17 +55,17 @@ const createMarketMenu = new Menu<MainContext>('create-market-menu')
   .submenu((ctx) => ctx.t('label-lot-size'), 'custom-lot-menu')
   .submenu((ctx) => ctx.t('label-tick-size'), 'custom-tick-menu')
   .row()
-  .text((ctx) => `--- ${ctx.t('label-advance-options')} ---`)
+  .text((ctx) => ctx.t('label-advance-options'))
   .row()
   .text((ctx) => ctx.t('label-event-length'), inputEventLengthCbQH)
   .text((ctx) => ctx.t('label-request-length'), inputRequestLengthCbQH)
   .row()
   .text((ctx) => ctx.t('label-orderbook-length'), inputOrderbookLengthCbQH)
   .row()
-  .text((ctx) => ctx.t('label-create-market'), fireCreateMarketCbQH)
+  .text((ctx) => ctx.t('label-create-openpool-market'), fireCreateMarketCbQH)
   .row()
-  // .text('🔙  Close', doneCbQH);
-  .back('❌  Close', async (ctx) => {
+  // .text('❌🔙  Close', doneCbQH);
+  .back('🔙  Close', async (ctx) => {
     const welcomeMessage = await generateWelcomeMessage(ctx);
     await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
   });
@@ -266,18 +266,21 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
   try {
     // console.log(ctx.session.createMarket);
 
+    if (!ctx.session.createMarket.baseMint) {
+      await ctx.reply('🔴 Please enter Token Address.');
+      return;
+    }
+
     const deployWallet = await getPrimaryWallet(ctx.chat!.id);
     if (!deployWallet) {
-      await ctx.reply('Please select Primary Wallet!');
+      await ctx.reply('🔴 Please select Primary Wallet.');
       return;
     }
 
     const quoteMint =
       ctx.session.createMarket.quoteMint === 'SOL'
         ? QUOTE_ADDRESS.SOL_ADDRESS
-        : ctx.session.createMarket.quoteMint === 'USDT'
-          ? QUOTE_ADDRESS.USDT_ADDRESS
-          : QUOTE_ADDRESS.USDC_ADDRESS;
+        : QUOTE_ADDRESS.USDC_ADDRESS;
 
     const ret = await serviceOpenmarket.createOpenMarket({
       baseMint: ctx.session.createMarket.baseMint,
@@ -295,9 +298,9 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
       throw 'Failed create market';
     } else {
       await ctx.reply(
-        `Market successfully created.
-        Market Id:       ${ret.marketId}
-        <a href="https://openbook-explorer.xyz/market/${ret.marketId}?network=devnet">To Market</a>
+        `🟢 Market successfully created.
+          Market Id:       ${ret.marketId}
+        <a href="https://openbook-explorer.xyz/market/${ret.marketId}">To Market</a>
         Transaction URL: https://explorer.solana.com/tx/${ret.txSignature}`,
         { parse_mode: 'HTML' },
       );
@@ -316,6 +319,6 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
       ret.txSignature,
     );
   } catch (err: any) {
-    await ctx.reply('Failed create market.');
+    await ctx.reply('🔴 Failed create market.');
   }
 }

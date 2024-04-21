@@ -839,13 +839,6 @@ export class BaseRay {
       );
     }
 
-    ////////////////////
-    console.log('marketOwner:', marketOwner);
-    console.log('marketState:', marketState);
-    console.log(input.baseMint.toBase58(), NATIVE_MINT.toBase58());
-    console.log(userBaseAtaInfo);
-    /////////////////////
-
     if (input.baseMint.toBase58() != NATIVE_MINT.toBase58() && !userBaseAtaInfo)
       return { Err: 'Not enough fund to create pool 2' };
     else {

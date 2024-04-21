@@ -9,6 +9,8 @@ import { settingsMenu } from './settings';
 import { createTokenMenu } from './create-token';
 import { createMarketMenu } from './create-market';
 import { createPoolMenu } from './create-pool';
+import { removeLiquidityMenu } from './remove_liquidity';
+import { burnLiquidityMenu } from './burn-liquidity';
 import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
 
 const debug = Debug(`bot:main`);
@@ -42,8 +44,22 @@ const mainMenu = new Menu<MainContext>('Welcome')
     },
   )
   .row()
-  .text((ctx) => ctx.t('label-remove-lp'))
-  .text((ctx) => ctx.t('label-burn-tokens'))
+  .submenu(
+    (ctx) => ctx.t('label-remove-lp'),
+    'remove-liquidity-menu',
+    async (ctx) => {
+      const message = ctx.t('remove-liquidity-title');
+      ctx.editMessageText(message, { parse_mode: 'HTML' });
+    },
+  )
+  .submenu(
+    (ctx) => ctx.t('label-burn-tokens'),
+    'burn-liquidity-menu',
+    async (ctx) => {
+      const message = ctx.t('burn-tokens-title');
+      ctx.editMessageText(message, { parse_mode: 'HTML' });
+    },
+  )
   .row()
   .submenu(
     (ctx) => ctx.t('label-wallet'),
@@ -69,6 +85,8 @@ mainMenu.register(settingsMenu);
 mainMenu.register(createTokenMenu);
 mainMenu.register(createMarketMenu);
 mainMenu.register(createPoolMenu);
+mainMenu.register(removeLiquidityMenu);
+mainMenu.register(burnLiquidityMenu);
 bot.use(mainMenu);
 
 bot.command(command.START, startCommandHandler);

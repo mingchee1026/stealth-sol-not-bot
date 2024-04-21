@@ -21,13 +21,17 @@ const ProcessBundleDataError = {
   INVALID_BUNDLE_INPUT: 'INVALID_BUNDLE_INPUT',
 };
 
-export async function saveLiquidityPool(
-  chatId: number,
-  inputData: BundlerInputData,
-) {
+export async function saveLiquidityPool(liquidityPool: any) {
   try {
-    const pool = new LiquidityPool({});
+    const pool = new LiquidityPool(liquidityPool);
     await pool.save();
+  } catch (err) {}
+}
+
+export async function getLiquidityPool(chatId: number, baseToken: string) {
+  try {
+    const pool = await LiquidityPool.findOne({ chatId, baseToken });
+    return pool;
   } catch (err) {}
 }
 

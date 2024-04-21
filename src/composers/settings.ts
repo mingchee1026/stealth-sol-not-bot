@@ -40,7 +40,7 @@ const settingsMenu = new Menu<MainContext>('settings-menu')
   )
   .row()
   // .text('❌  Close', doneCbQH);
-  .back('❌  Close', async (ctx) => {
+  .back('🔙  Close', async (ctx) => {
     const welcomeMessage = await generateWelcomeMessage(ctx);
     await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
   });

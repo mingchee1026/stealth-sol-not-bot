@@ -6,14 +6,15 @@ interface IBuyerInfo {
   buyerAuthority: string;
 }
 
-interface ILiquidityPool {
+export interface ILiquidityPool {
   chatId: number;
+  poolId: string;
   baseToken: string;
   quoteToken: string;
   tokenLiquidity: number;
   amountOfPercentage: number;
   buyerInfos: Array<IBuyerInfo>;
-  bolckEngine: string;
+  blockEngine: string;
   deployWallet: string;
   bundleId: string;
   timestamp: Date;
@@ -21,12 +22,13 @@ interface ILiquidityPool {
 
 const liquidityPoolSchema = new Schema<ILiquidityPool>({
   chatId: { type: Number, required: true },
+  poolId: { type: String, require: true },
   baseToken: { type: String, require: false },
   quoteToken: { type: String, require: false },
   tokenLiquidity: { type: Number, require: false },
   amountOfPercentage: { type: Number, require: false },
   buyerInfos: [{ id: Number, buyAmount: Number, buyerAuthority: String }],
-  bolckEngine: { type: String, require: false },
+  blockEngine: { type: String, require: false },
   deployWallet: { type: String, require: false },
   bundleId: { type: String, required: true },
   timestamp: {

@@ -1,5 +1,6 @@
 import Debug from 'debug';
 import { Keyboard, InlineKeyboard } from 'grammy';
+import axios from 'axios';
 
 import { MainContext } from '@root/configs/context';
 import { IWallet } from '@root/models/wallet-model';
@@ -12,6 +13,23 @@ const generateWelcomeMessage = async (ctx: MainContext) => {
 
   //   log('start: %O', ctx.message);
 
+  if (ctx.session.solPrice === 0) {
+    const price = await getSolPrice();
+    if (price) {
+      ctx.session.solPrice = price;
+      ctx.session.priceUpdated = new Date().getTime();
+    }
+  } else {
+    const current = new Date().getTime();
+    if (current - ctx.session.priceUpdated > 1000 * 60 * 60) {
+      const price = await getSolPrice();
+      if (price) {
+        ctx.session.solPrice = price;
+        ctx.session.priceUpdated = new Date().getTime();
+      }
+    }
+  }
+
   let wallets: IWallet[] = [];
   if (ctx.chat) {
     wallets = await getWalletsByUser(ctx.chat.id);
@@ -22,11 +40,12 @@ const generateWelcomeMessage = async (ctx: MainContext) => {
     (total, wallet) => total + (wallet.balance || 0),
     0,
   );
+
   const primaryWalletSol = primaryWallet?.balance || 0;
 
   let welcomeMessage: string = ctx.t('main-welcome', {
     countOfWallet: wallets.length,
-    totalDollar: totalSol,
+    totalDollar: (ctx.session.solPrice * totalSol).toFixed(2),
     primaryWallet: primaryWallet?.publicKey || 'NOT SPECIFIED',
     promarySol: primaryWalletSol,
   });
@@ -76,6 +95,20 @@ const createMainKeyboard = (ctx: MainContext) => {
     .row()
     .text(ctx.t('label-help'));
   // .resized()
+};
+
+const getSolPrice = async () => {
+  debug('Update sol price.');
+  try {
+    const url =
+      'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd';
+    const { data } = await axios.get(url);
+    const price = Number(data.solana.usd);
+    return price;
+  } catch (err) {
+    debug(err);
+    return null;
+  }
 };
 
 export { generateWelcomeMessage, generateWalletsMessage };

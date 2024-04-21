@@ -141,7 +141,7 @@ export async function sendBundle(
 
     const bundleRes: Result<{ bundleId: string }, string> | undefined = result;
 
-    debug({ bundleRes });
+    debug('processBundle:', { bundleRes });
 
     let bundleId = '';
     if (!bundleRes) {
@@ -256,12 +256,12 @@ export default async function processBundle(
     // });
     const b = new bundle.Bundle(txs, txs.length);
     if (b instanceof Error) {
-      console.log({ bundleError: b });
+      console.log('222', { bundleError: b });
       return { Err: 'Failed to prepare the bunde transaction' };
     }
     jitoClient.onBundleResult(
       (bundleInfo) => {
-        debug({ bundleInfo: JSON.stringify(bundleInfo) });
+        debug('333', { bundleInfo: JSON.stringify(bundleInfo) });
         if (!bundleResult.pass) {
           if (bundleInfo.accepted) {
             bundleResult.pass = true;
@@ -270,7 +270,7 @@ export default async function processBundle(
         }
       },
       (bundleSendError) =>
-        debug({ bundleSendError: JSON.stringify(bundleSendError) }),
+        debug('444', { bundleSendError: JSON.stringify(bundleSendError) }),
     );
     debug('Sending bundle ...');
     const bundleId = await jitoClient.sendBundle(b).catch(async () => {
@@ -284,6 +284,7 @@ export default async function processBundle(
     debug('Bundle Sent ...');
 
     if (!bundleId) {
+      console.log('55555');
       return { Err: 'Bundle transaction failed' };
     }
 

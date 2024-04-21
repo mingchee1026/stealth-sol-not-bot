@@ -2,6 +2,7 @@ import Debug from 'debug';
 import { Composer } from 'grammy';
 import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
+import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 import { MainContext } from '@root/configs/context';
 import { generateWelcomeMessage } from './helpers';
@@ -45,7 +46,7 @@ const router = new Router<MainContext>((ctx) => ctx.session.step);
 
 const createPoolMenu = new Menu<MainContext>('create-pool-menu')
   // .text((ctx) => ctx.t('label-token-address'), inputBaseTokenCbQH)
-  .text((ctx) => 'Market ID', inputMarketIdCbQH)
+  .text((ctx) => '🏪 Market ID', inputMarketIdCbQH)
   .row()
   // .text((ctx) => `--- ${ctx.t('label-base-token')} ---`)
   // .row()
@@ -76,7 +77,7 @@ const createPoolMenu = new Menu<MainContext>('create-pool-menu')
   .text((ctx) => ctx.t('label-liquidity-amount'), inputLiquidityAmountCbQH)
   .text((ctx) => ctx.t('label-liquidity-percent'), inputLiquidityPercentCbQH)
   .row()
-  .text((ctx) => `--- Buyers ---`)
+  .text((ctx) => `🛒 Buyers Information`)
   .row()
   .text('Buyer 1 Sol Account', inputBuyer1SolAmountCbQH)
   .text('Buyer 1 Private Key', inputBuyer1PrivateKeyCbQH)
@@ -87,10 +88,10 @@ const createPoolMenu = new Menu<MainContext>('create-pool-menu')
   .text('Buyer 1 Sol Account', inputBuyer3SolAmountCbQH)
   .text('Buyer 1 Private Key', inputBuyer3PrivateKeyCbQH)
   .row()
-  .text('Bundle', fireCreateMarketCbQH)
+  .text('⚡ Bundle', fireCreateMarketCbQH)
   .row()
-  // .text('🔙  Close', doneCbQH);
-  .back('❌  Close', async (ctx) => {
+  // .text('❌🔙  Close', doneCbQH);
+  .back('🔙  Close', async (ctx) => {
     const welcomeMessage = await generateWelcomeMessage(ctx);
     await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
   });
@@ -405,140 +406,165 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
   try {
     // console.log(ctx.chat!.id);
 
-    const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
-
     const marketInfo = await serviceOpenmarket.getOpenmarket(
       ctx.chat!.id,
       ctx.session.createPool.marketId,
     );
+    if (!marketInfo) {
+      await ctx.reply('🔴 Please enter Market ID.');
+      return;
+    }
 
     const tokenInfo = await serviceToken.getMintToken(
       ctx.chat!.id,
       marketInfo!.baseMint,
     );
-
-    const deployWallet = await getPrimaryWallet(ctx.chat!.id);
-    if (!deployWallet) {
-      await ctx.reply('Please select Primary Wallet!');
+    if (!tokenInfo) {
+      await ctx.reply('🔴 Token information not found.');
       return;
     }
 
+    const deployWallet = await getPrimaryWallet(ctx.chat!.id);
+    if (!deployWallet) {
+      await ctx.reply('🔴 Please select Primary Wallet.');
+      return;
+    }
+
+    const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
+    if (!botSettings) {
+      await ctx.reply('🔴 Please enter Bot settings.');
+      return;
+    }
+
+    if (!ctx.session.createPool.tokenLiquidity) {
+      await ctx.reply('🔴 Failed generate Bundle data.');
+      return;
+    }
+
+    const bundleTip = LAMPORTS_PER_SOL * (botSettings.bundleTip || 0.0015);
+    const solTxnTip = LAMPORTS_PER_SOL * (botSettings.solTxTip || 0.0001);
+
     const supply = tokenInfo!.supply;
     const quoteMint =
-      ctx.session.createPool.quoteToken === 'SOL'
+      marketInfo.quoteMint === 'SOL'
         ? QUOTE_ADDRESS.SOL_ADDRESS
-        : ctx.session.createMarket.quoteMint === 'USDT'
-          ? QUOTE_ADDRESS.USDT_ADDRESS
-          : QUOTE_ADDRESS.USDC_ADDRESS;
-
-    // const inputData: BundlerInputData = {
-    //   createTokenInfo: {
-    //     address: marketInfo!.baseMint,
-    //     supply: tokenInfo!.supply,
-    //   },
-    //   marketSettings: {
-    //     quoteTokenAddress: quoteMint,
-    //     baseLogSize: ctx.session.createPool.baseLogSize,
-    //     tickSize: ctx.session.createPool.tickSize,
-    //   },
-    //   bundleSetup: {
-    //     baseliquidityAmount:
-    //       supply * (ctx.session.createPool.amountOfPercentage / 100),
-    //     quoteliquidityAmount: ctx.session.createPool.tokenLiquidity,
-    //     bundleTip: botSettings!.bundleTip,
-    //     deployWallet: deployWallet.privateKey,
-    //     buyerCount: 3,
-    //     buyers: [
-    //       {
-    //         id: ctx.session.createPool.buyerInfos[0].id,
-    //         amount: ctx.session.createPool.buyerInfos[0].buyAmount,
-    //         privateKey: ctx.session.createPool.buyerInfos[0].buyerAuthority,
-    //       },
-    //       {
-    //         id: ctx.session.createPool.buyerInfos[1].id,
-    //         amount: ctx.session.createPool.buyerInfos[1].buyAmount,
-    //         privateKey: ctx.session.createPool.buyerInfos[1].buyerAuthority,
-    //       },
-    //       {
-    //         id: ctx.session.createPool.buyerInfos[2].id,
-    //         amount: ctx.session.createPool.buyerInfos[2].buyAmount,
-    //         privateKey: ctx.session.createPool.buyerInfos[2].buyerAuthority,
-    //       },
-    //     ],
-    //     blockEngin: bolckEngines[ctx.session.createPool.blockEngine],
-    //   },
-    // };
+        : QUOTE_ADDRESS.USDC_ADDRESS;
 
     const inputData: BundlerInputData = {
       createTokenInfo: {
-        address: marketInfo!.baseMint, // '9uadnK9nZ9MoXuYP43jH4mEjdgy1F4qXnFHRRWVmWQbP',
-        supply: supply,
+        address: marketInfo!.baseMint,
+        supply: tokenInfo!.supply,
       },
       marketSettings: {
         marketId: ctx.session.createPool.marketId,
         quoteTokenAddress: quoteMint,
-        baseLogSize: 1,
-        tickSize: 1,
+        baseLogSize: ctx.session.createPool.baseLogSize,
+        tickSize: ctx.session.createPool.tickSize,
       },
       bundleSetup: {
-        baseliquidityAmount: supply,
-        quoteliquidityAmount: 0.01,
-        bundleTip: 1500000,
-        //deployWallet.privateKey,
-        deployWallet:
-          '3LBufA58uyUpqP4noSijhGtadMG6TZoiBFKP5UTD1rivFZgtcbbRaPnFTSf1YqPCkoyJeSaZNPYkSkhRmkHPJ18U',
+        baseliquidityAmount:
+          supply * (ctx.session.createPool.amountOfPercentage / 100),
+        quoteliquidityAmount: ctx.session.createPool.tokenLiquidity,
+        bundleTip: bundleTip,
+        deployWallet: deployWallet.privateKey,
         buyerCount: 3,
         buyers: [
           {
-            id: 0,
-            amount: 0.001,
-            privateKey:
-              '2Dg2VAWQ2mZ1vZoYPnq8yiM5MD9eZq2hPwj5GDJy5GD8yQQAieSjd9RGrrDprdnjXsJGYNoeyY7EozssMr2yDvPt',
+            id: ctx.session.createPool.buyerInfos[0].id,
+            amount: ctx.session.createPool.buyerInfos[0].buyAmount,
+            privateKey: ctx.session.createPool.buyerInfos[0].buyerAuthority,
           },
           {
-            id: 1,
-            amount: 0.001,
-            privateKey:
-              '4cCMpMirkfwBy44W4PgGFM2ocDgVCocZzuCAZNMU6axbuHo7p4khZ12rdFsooFWtwzFARerCwR5kbjdEMuNeYpvN',
+            id: ctx.session.createPool.buyerInfos[1].id,
+            amount: ctx.session.createPool.buyerInfos[1].buyAmount,
+            privateKey: ctx.session.createPool.buyerInfos[1].buyerAuthority,
           },
           {
-            id: 2,
-            amount: 0.006,
-            privateKey:
-              '5WZWJSSndqLbWS8XoNGLKidY3eTKSjUcwsmXSqPRXA2VEm3DvFm4gfYs5Yqzh7r1hZ6AirHiKkvrcU2Fjo6sSocb',
+            id: ctx.session.createPool.buyerInfos[2].id,
+            amount: ctx.session.createPool.buyerInfos[2].buyAmount,
+            privateKey: ctx.session.createPool.buyerInfos[2].buyerAuthority,
           },
         ],
-        blockEngin: 'amsterdam.mainnet.block-engine.jito.wtf',
+        blockEngin: bolckEngines[ctx.session.createPool.blockEngine],
       },
     };
 
-    console.log(inputData);
+    // const inputData: BundlerInputData = {
+    //   createTokenInfo: {
+    //     address: marketInfo!.baseMint, // '9uadnK9nZ9MoXuYP43jH4mEjdgy1F4qXnFHRRWVmWQbP',
+    //     supply: supply,
+    //   },
+    //   marketSettings: {
+    //     marketId: ctx.session.createPool.marketId,
+    //     quoteTokenAddress: quoteMint,
+    //     baseLogSize: 1,
+    //     tickSize: 1,
+    //   },
+    //   bundleSetup: {
+    //     baseliquidityAmount: supply,
+    //     quoteliquidityAmount: 0.01,
+    //     bundleTip: 1500000,
+
+    //     deployWallet: deployWallet.privateKey,
+    //     // '3LBufA58uyUpqP4noSijhGtadMG6TZoiBFKP5UTD1rivFZgtcbbRaPnFTSf1YqPCkoyJeSaZNPYkSkhRmkHPJ18U',
+    //     buyerCount: 3,
+    //     buyers: [
+    //       {
+    //         id: 0,
+    //         amount: 0.001,
+    //         privateKey:
+    //           '2Dg2VAWQ2mZ1vZoYPnq8yiM5MD9eZq2hPwj5GDJy5GD8yQQAieSjd9RGrrDprdnjXsJGYNoeyY7EozssMr2yDvPt',
+    //       },
+    //       {
+    //         id: 1,
+    //         amount: 0.001,
+    //         privateKey:
+    //           '4cCMpMirkfwBy44W4PgGFM2ocDgVCocZzuCAZNMU6axbuHo7p4khZ12rdFsooFWtwzFARerCwR5kbjdEMuNeYpvN',
+    //       },
+    //       {
+    //         id: 2,
+    //         amount: 0.006,
+    //         privateKey:
+    //           '5WZWJSSndqLbWS8XoNGLKidY3eTKSjUcwsmXSqPRXA2VEm3DvFm4gfYs5Yqzh7r1hZ6AirHiKkvrcU2Fjo6sSocb',
+    //       },
+    //     ],
+    //     blockEngin: 'amsterdam.mainnet.block-engine.jito.wtf',
+    //   },
+    // };
 
     const doBundle = await serviceLiquidityPool.launchLiquidityPool(
       inputData,
-      botSettings!.solTxTip,
+      solTxnTip,
     );
 
     console.log(doBundle);
 
     if (!doBundle) {
       throw '';
-    } else {
+    } else if (doBundle.bundleRes && doBundle.bundleRes.bundleId) {
       await ctx.reply(
-        `🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${doBundle?.bundleRes?.bundleId}' target='_blank'>here</a>.`,
+        `🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${doBundle.bundleRes.bundleId}' target='_blank'>here</a>.
+            Pool ID: ${doBundle.poolId}`,
         {
           parse_mode: 'HTML',
         },
       );
-    }
 
-    await serviceLiquidityPool.saveLiquidityPool(
-      ctx.chat!.id,
-      inputData,
-      // tokenInfo,
-      // ret.address,
-      // ret.tx,
-    );
+      await serviceLiquidityPool.saveLiquidityPool({
+        chatId: ctx.chat!.id,
+        poolId: doBundle.poolId,
+        baseToken: inputData.createTokenInfo.address,
+        quoteToken: inputData.marketSettings.quoteTokenAddress,
+        tokenLiquidity: ctx.session.createPool.tokenLiquidity,
+        amountOfPercentage: ctx.session.createPool.amountOfPercentage,
+        buyerInfos: ctx.session.createPool.buyerInfos,
+        blockEngine: ctx.session.createPool.blockEngine,
+        deployWallet: deployWallet.publicKey,
+        bundleId: doBundle.bundleRes?.bundleId,
+      });
+    } else {
+      throw 'Bundle Failed.';
+    }
   } catch (err: any) {
     console.log(err);
     await ctx.reply(`🔴 Transaction Failed : ${err}`);

@@ -3,6 +3,8 @@ import { Route as SettingsRoute } from '@root/composers/settings';
 import { Route as CreateTokenRoute } from '@root/composers/create-token';
 import { Route as CreateMarketRoute } from '@root/composers/create-market';
 import { Route as CreatePoolRoute } from '@root/composers/create-pool';
+import { Route as RemoveLiquidityRoute } from '@root/composers/remove_liquidity';
+import { Route as BurnLiquidityRoute } from '@root/composers/burn-liquidity';
 
 type Step =
   | 'IDLE'
@@ -10,11 +12,15 @@ type Step =
   | SettingsRoute
   | CreateTokenRoute
   | CreateMarketRoute
-  | CreatePoolRoute;
+  | CreatePoolRoute
+  | RemoveLiquidityRoute
+  | BurnLiquidityRoute;
 
 export interface SessionData {
   step: Step;
   topMsgId: number;
+  solPrice: number;
+  priceUpdated: number;
   createToken: {
     name: string;
     symbol: string;
@@ -52,12 +58,21 @@ export interface SessionData {
     buyerInfos: { id: number; buyAmount: number; buyerAuthority: string }[];
     blockEngine: string;
   };
+  removeLiquidity: {
+    tokenAddress: string;
+  };
+  burnLiquidity: {
+    tokenAddress: string;
+    burnAmount: number;
+  };
 }
 
 export function createInitialSessionData() {
   return {
     step: 'IDLE' as Step,
     topMsgId: 0,
+    solPrice: 0,
+    priceUpdated: 0,
     createToken: {
       name: '',
       symbol: '',
@@ -76,7 +91,7 @@ export function createInitialSessionData() {
       revokeFreeze: false,
     },
     createMarket: {
-      baseMint: 'CgAC6A5a7H7A9chf33EyQdcdnUakLeUjCeTagGyWbYfq',
+      baseMint: '',
       quoteMint: 'SOL',
       baseLogSize: 1,
       tickSize: 1,
@@ -85,7 +100,7 @@ export function createInitialSessionData() {
       orderbookLength: 201,
     },
     createPool: {
-      marketId: '35J5uLAqKbbyjrqmz88xMotWx2bEh8FWe6uNkBymsg4h',
+      marketId: '',
       baseToken: '',
       quoteToken: 'SOL',
       baseLogSize: 0,
@@ -98,6 +113,13 @@ export function createInitialSessionData() {
         { id: 2, buyAmount: 0, buyerAuthority: '' },
       ],
       blockEngine: 'Amsterdam',
+    },
+    removeLiquidity: {
+      tokenAddress: '',
+    },
+    burnLiquidity: {
+      tokenAddress: '',
+      burnAmount: 30,
     },
   };
 }
