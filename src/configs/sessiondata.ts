@@ -74,11 +74,12 @@ export function createInitialSessionData() {
     solPrice: 0,
     priceUpdated: 0,
     createToken: {
-      name: '',
-      symbol: '',
+      name: 'My DOG 5',
+      symbol: 'MDG',
       supply: 100_000_000,
       decimals: 6,
-      image: '',
+      image:
+        'https://ipfs.io/ipfs/QmdM9RMvchMxxQAdNmg6Ewq356wRcnk2q3hP9VtYcYHQwk',
       description: '',
       socials: {
         website: '',

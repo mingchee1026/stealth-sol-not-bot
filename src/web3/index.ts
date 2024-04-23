@@ -323,7 +323,7 @@ export class Connectivity {
       if (!accountsInfo) throw 'failed to fetch some data';
       const [buyerInfo, inAtaInfo, outAtaInfo] = accountsInfo;
       if (i == buyersInfo.length - 1) {
-        buySolCost = bundleTip; // ENV.BUNDLE_FEE;
+        buySolCost = LAMPORTS_PER_SOL * bundleTip; // ENV.BUNDLE_FEE;
       }
       if (!buyerInfo) throw `${buyer.toBase58()} wallet dose not enought sol`;
       if (!inAtaInfo) {
@@ -673,7 +673,7 @@ export class Connectivity {
             web3.SystemProgram.transfer({
               fromPubkey: sender,
               toPubkey: jitoTipsAccount,
-              lamports: bundleSetup.bundleTip, // ENV.BUNDLE_FEE,
+              lamports: LAMPORTS_PER_SOL * bundleSetup.bundleTip, // ENV.BUNDLE_FEE,
             }),
           );
         }
@@ -802,7 +802,12 @@ export class Connectivity {
       if (!hash) return { Err: Web3Error.FAILED_TO_DEPLOY_METADATA };
       ipfsHash = hash;
     }
-    const uri = `https://${ENV.PINATA_DOMAIN}/ipfs/${ipfsHash}`;
+
+    // const uri = `https://${ENV.PINATA_DOMAIN}/ipfs/${ipfsHash}`;
+    const uri = `https://ipfs.io/ipfs/${ipfsHash}`;
+
+    console.log('prepare token tx');
+
     const createTokenTxInfo = await this.baseMpl.createToken({
       name,
       uri,
@@ -814,6 +819,9 @@ export class Connectivity {
     if (!createTokenTxInfo) {
       return { Err: Web3Error.FAILED_TO_PREPARE_TX };
     }
+
+    console.log('create revokeMint tx');
+
     if (revokeMint)
       createTokenTxInfo.ixs.push(
         this.baseSpl.revokeAuthority({
@@ -822,6 +830,9 @@ export class Connectivity {
           mint: createTokenTxInfo.mintKeypair.publicKey,
         }),
       );
+
+    console.log('create revokeFreeze tx');
+
     if (revokeFreeze)
       createTokenTxInfo.ixs.push(
         this.baseSpl.revokeAuthority({
@@ -830,16 +841,31 @@ export class Connectivity {
           mint: createTokenTxInfo.mintKeypair.publicKey,
         }),
       );
+
     const mintKeypair = createTokenTxInfo.mintKeypair;
     const tokenAddress = mintKeypair.publicKey.toBase58();
+
+    console.log('tokenAddress', tokenAddress);
+
+    console.log('sending txs');
+
     const txSignature = await this.sendTransaction(createTokenTxInfo.ixs, [
       mintKeypair,
     ]).catch((sendTransactionError) => {
-      if (!ENV.IN_PRODUCTION) {
-        log(sendTransactionError);
-      }
+      // if (!ENV.IN_PRODUCTION) {
+      log(sendTransactionError);
+      // }
     });
-    if (!txSignature) return { Err: Web3Error.TRANSACTION_FAILED };
+
+    console.log('Token Creation tx:', txSignature);
+
+    if (!txSignature) {
+      console.log('failed tx.');
+      return { Err: Web3Error.TRANSACTION_FAILED };
+    }
+
+    console.log('success txs');
+
     return {
       Ok: {
         txSignature,
@@ -1180,7 +1206,7 @@ export class Connectivity {
     const ix2 = web3.SystemProgram.transfer({
       fromPubkey: sender,
       toPubkey: feeReceiver,
-      lamports: 2 * ENV.BUNDLE_FEE,
+      lamports: 2 * 1_500_000,
     });
     const connection = new web3.Connection(ENV.RPC_ENDPOINT_TEST);
     const blockhash = await getBlockhash(connection);
@@ -1242,19 +1268,20 @@ export class Connectivity {
       const lutsAddress = [
         baseMint,
         quoteMint,
-        // poolKeys.baseVault,
-        // poolKeys.quoteVault,
+        this.baseRay.getCachedMarketInfo(marketId).baseVault, // poolKeys.baseVault,
+        this.baseRay.getCachedMarketInfo(marketId).quoteVault, // poolKeys.quoteVault,
         // poolKeys.lpMint,
         // poolKeys.lpVault,
         marketId,
         // poolKeys.marketBaseVault, poolKeys.marketQuoteVault,
-        // poolKeys.marketEventQueue,
-        // poolKeys.marketBids,
-        // poolKeys.marketAsks,
-        // poolKeys.authority,
+        this.baseRay.getCachedMarketInfo(marketId).eventQueue, // poolKeys.marketEventQueue,
+        this.baseRay.getCachedMarketInfo(marketId).bids, // poolKeys.marketBids,
+        this.baseRay.getCachedMarketInfo(marketId).asks, // poolKeys.marketAsks,
+        this.baseRay.getCachedMarketInfo(marketId).vaultOwner, // poolKeys.authority,
         // createPoolTxInfo.poolId,
+        this.baseRay.getCachedMarketInfo(marketId).programId,
       ];
-      // const lutsInfo = await this.bundleCreateLookuptableAndMarketVaults(
+
       const lutsInfo = await this.createLookupTableAndMarketVaults(
         lutsAddress,
         createMarketInfoRes.vaultInstructions,
@@ -1271,6 +1298,7 @@ export class Connectivity {
       debug('create market tx');
 
       await sleep(2_000);
+
       const createMarketRecentBlockhash = await getBlockhash(this.connection);
       if (!createMarketRecentBlockhash)
         return { Err: 'Web3BundleError.BUNDLER_FAILED_TO_PREPARE' };
@@ -1465,7 +1493,7 @@ export class Connectivity {
             web3.SystemProgram.transfer({
               fromPubkey: sender,
               toPubkey: jitoTipsAccount,
-              lamports: bundleSetup.bundleTip, // ENV.BUNDLE_FEE,
+              lamports: LAMPORTS_PER_SOL * bundleSetup.bundleTip, // ENV.BUNDLE_FEE,
             }),
           );
         }
@@ -1678,7 +1706,7 @@ export class Connectivity {
     if (!recentBlockhash) throw 'blockhash not found (luts creation)';
     const msg = new web3.TransactionMessage({
       instructions: [
-        // incTxFeeIx,
+        incTxFeeIx,
         lookupTableInst,
         extendInstruction,
         ...initMarketVaultsIxs,

@@ -13,6 +13,8 @@ import {
   TxVersion,
   LOOKUP_TABLE_CACHE,
   buildSimpleTransaction,
+  Token,
+  TokenAmount,
 } from '@raydium-io/raydium-sdk';
 import {
   Connection,
@@ -26,6 +28,7 @@ import {
 
 import { ENV, RPC_ENDPOINT_MAIN, RPC_ENDPOINT_DEV } from '@root/configs';
 import { getKeypairFromStr } from '@root/web3/base/utils';
+import { chargeToSite } from './utils';
 
 const makeTxVersion = TxVersion.V0;
 
@@ -33,7 +36,8 @@ export const removeLiquidityPool = async (
   walletPrivateKey: string,
   tokenAddress: string,
   poolId: string,
-): Promise<string[]> => {
+  solTxnsTip: number,
+): Promise<string | null> => {
   try {
     const rpcEndpoint = ENV.IN_PRODUCTION
       ? RPC_ENDPOINT_MAIN
@@ -45,25 +49,45 @@ export const removeLiquidityPool = async (
       throw 'Not found wallet';
     }
 
+    const removeLpTokenPubKey = new PublicKey(tokenAddress);
+
     // Step 1 - Fetch basic info
     const walletTokenAccounts = await getWalletTokenAccount(
       connection,
       wallet.publicKey,
     );
 
-    const removeLpTokenAccount = walletTokenAccounts.find(
-      (walletTokenAccount) =>
-        walletTokenAccount.pubkey === new PublicKey(tokenAddress),
-    );
+    // const removeLpTokenAccount = walletTokenAccounts.find(
+    //   (walletTokenAccount) =>
+    //     walletTokenAccount.pubkey === new PublicKey(tokenAddress),
+    // );
 
+    console.log('poolId:', poolId);
     const targetPoolInfo = await formatAmmKeysById(poolId, connection);
-    console.log(targetPoolInfo);
+
     if (!targetPoolInfo) {
       throw 'cannot find the target pool';
     }
 
-    // Step 2 - Make instructions
+    console.log('targetPoolInfo:', targetPoolInfo);
+
     const poolKeys = jsonInfo2PoolKeys(targetPoolInfo) as LiquidityPoolKeys;
+
+    const removeLpToken = new Token(
+      TOKEN_PROGRAM_ID,
+      poolKeys.lpMint,
+      poolKeys.lpDecimals,
+    );
+
+    const removeLpTokenAmount =
+      await await connection.getTokenAccountBalance(removeLpTokenPubKey);
+
+    const amountIn = new TokenAmount(
+      removeLpToken,
+      BigInt(removeLpTokenAmount.value.amount),
+    );
+
+    // Step 2 - Make instructions
     const removeLiquidityInstructionResponse =
       await Liquidity.makeRemoveLiquidityInstructionSimple({
         connection,
@@ -73,7 +97,7 @@ export const removeLiquidityPool = async (
           payer: wallet.publicKey,
           tokenAccounts: walletTokenAccounts,
         },
-        amountIn: removeLpTokenAccount?.accountInfo.amount,
+        amountIn: amountIn,
         makeTxVersion,
       });
 
@@ -86,12 +110,21 @@ export const removeLiquidityPool = async (
       addLookupTableInfo: LOOKUP_TABLE_CACHE,
     });
 
-    const txids = await sendTx(connection, wallet, willSendTx);
+    const txids = await sendTx(connection, wallet, willSendTx, {
+      skipPreflight: false,
+      maxRetries: 30,
+    });
 
-    return txids;
+    await chargeToSite(
+      walletPrivateKey,
+      Number(ENV.REMOVE_LP_CHARGE_SOL),
+      solTxnsTip,
+    );
+
+    return txids[0];
   } catch (err) {
     console.log(err);
-    return [];
+    return null;
   }
 };
 

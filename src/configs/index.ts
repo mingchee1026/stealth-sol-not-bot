@@ -9,7 +9,7 @@ import Debug from 'debug';
 import { getKeypairFromStr } from '../web3/base/utils';
 
 export const RPC_ENDPOINT_MAIN =
-  'https://greatest-cosmological-diamond.solana-mainnet.quiknode.pro/911eeb4f80ca21426f9d8cb6a743d84545db73fa/'; //'https://api.mainnet-beta.solana.com';
+  process.env.RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com';
 export const RPC_ENDPOINT_TEST = 'https://api.testnet.solana.com';
 export const RPC_ENDPOINT_DEV = 'https://api.devnet.solana.com';
 export const RPC_ENDPOINT_LOCAL = 'http://127.0.0.1:8899';
@@ -33,14 +33,34 @@ const SKIP_DEPLOY_JSON_METADATA =
 export const IN_PRODUCTION = process.env.PRODUCTION == '1' ? true : false;
 const LOG_ERROR = !IN_PRODUCTION;
 
-const CUSTOM_RPC_ENDPOINT_MAIN = process.env.CUSTOM_RPC_ENDPOINT_MAIN;
-
 const JITO_BLOCK_ENGINE_URL = process.env.JITO_BLOCK_ENGINE_URL;
 const JITO_AUTH_KEYPAIR = getKeypairFromStr(
   process.env.JITO_AUTH_KEYPAIR || '',
 );
 const BUNDLE_FEE = Number(process.env.BUNDLE_FEE);
-if (!BUNDLE_FEE || Number.isNaN(BUNDLE_FEE)) throw 'Invalid bundle fee env';
+if (!BUNDLE_FEE || Number.isNaN(BUNDLE_FEE)) {
+  throw 'Invalid bundle fee env';
+}
+
+const CHARGE_WALLET_ADDRESS = process.env.CHARGE_WALLET_ADDRESS;
+if (!CHARGE_WALLET_ADDRESS) {
+  throw 'Invalid charge wallet env';
+}
+
+const CREATE_TOKEN_CHARGE_SOL = process.env.CREATE_TOKEN_CHARGE_SOL;
+const CREATE_MARKET_CHARGE_SOL = process.env.CREATE_MARKET_CHARGE_SOL;
+const CREATE_POOL_CHARGE_SOL = process.env.CREATE_POOL_CHARGE_SOL;
+const BURN_TOKENS_CHARGE_SOL = process.env.BURN_TOKENS_CHARGE_SOL;
+const REMOVE_LP_CHARGE_SOL = process.env.REMOVE_LP_CHARGE_SOL;
+if (
+  !CREATE_TOKEN_CHARGE_SOL ||
+  !CREATE_MARKET_CHARGE_SOL ||
+  !CREATE_POOL_CHARGE_SOL ||
+  !BURN_TOKENS_CHARGE_SOL ||
+  !REMOVE_LP_CHARGE_SOL
+) {
+  throw 'Invalid charge fee env';
+}
 
 if (
   !PINATA_API_kEY ||
@@ -59,19 +79,23 @@ export const ENV = {
   PINATA_API_SECRET_KEY,
   PINATA_DOMAIN,
   IN_PRODUCTION,
-  RPC_ENDPOINT_DEV,
   RPC_ENDPOINT_MAIN,
-  CUSTOM_RPC_ENDPOINT_MAIN,
-  RPC_ENDPOINT_LOCAL,
+  RPC_ENDPOINT_DEV,
   RPC_ENDPOINT_TEST,
-  RPC_ENDPOINT: IN_PRODUCTION ? CUSTOM_RPC_ENDPOINT_MAIN : RPC_ENDPOINT_DEV,
+  RPC_ENDPOINT_LOCAL,
   SKIP_DEPLOY_JSON_METADATA,
   LOG_ERROR,
   JITO_BLOCK_ENGINE_URL,
   JITO_AUTH_KEYPAIR,
   BUNDLE_FEE,
+  CHARGE_WALLET_ADDRESS,
+  CREATE_TOKEN_CHARGE_SOL,
+  CREATE_MARKET_CHARGE_SOL,
+  CREATE_POOL_CHARGE_SOL,
+  BURN_TOKENS_CHARGE_SOL,
+  REMOVE_LP_CHARGE_SOL,
 };
-if (IS_LOCAL_NET) ENV.RPC_ENDPOINT = RPC_ENDPOINT_LOCAL;
+// if (IS_LOCAL_NET) ENV.RPC_ENDPOINT = RPC_ENDPOINT_LOCAL;
 
 export const PROGRAMS = {
   associatedTokenProgram: ASSOCIATED_PROGRAM_ID,

@@ -15,6 +15,7 @@ import {
 } from '@root/services';
 import { BundlerInputData } from '@root/configs/types';
 import { QUOTE_ADDRESS } from '@root/configs';
+import { command } from './constants';
 
 export enum Route {
   POOL_MARKET_ID = 'CREATE_POOL|POOL_MARKET_ID',
@@ -127,6 +128,8 @@ createPoolMenu.register(customTickMenu);
 
 bot.use(createPoolMenu);
 
+bot.command(command.CREATE_LIQUIDITY, createPoolCommandHandler);
+
 router.route('IDLE', (_, next) => next());
 router.route(Route.POOL_MARKET_ID, firePoolInfomationRouteHandler);
 router.route(Route.POOL_BASE_TOKEN, firePoolInfomationRouteHandler);
@@ -145,13 +148,13 @@ bot.use(router);
 
 export { bot, createPoolMenu };
 
-// export async function createTokenCommandHandler(ctx: MainContext) {
-//   const welcomeMessage = await generateWalletsMessage(ctx);
-//   await ctx.reply(welcomeMessage, {
-//     parse_mode: 'HTML',
-//     reply_markup: createTokenMenu,
-//   });
-// }
+export async function createPoolCommandHandler(ctx: MainContext) {
+  const message = ctx.t('create-pool-title');
+  await ctx.reply(message, {
+    parse_mode: 'HTML',
+    reply_markup: createPoolMenu,
+  });
+}
 
 async function inputMarketIdCbQH(ctx: MainContext) {
   try {
@@ -403,6 +406,7 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
 }
 
 async function fireCreateMarketCbQH(ctx: MainContext) {
+  let processMessageId = 0;
   try {
     // console.log(ctx.chat!.id);
 
@@ -441,8 +445,14 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
       return;
     }
 
-    const bundleTip = LAMPORTS_PER_SOL * (botSettings.bundleTip || 0.0015);
-    const solTxnTip = LAMPORTS_PER_SOL * (botSettings.solTxTip || 0.0001);
+    const msg = await ctx.reply(
+      'Pool creating in progress. Please wait a moment...',
+    );
+
+    processMessageId = msg.message_id;
+
+    const bundleTip = botSettings.bundleTip || 0.0015;
+    const solTxnTip = botSettings.solTxTip || 0.0001;
 
     const supply = tokenInfo!.supply;
     const quoteMint =
@@ -542,13 +552,17 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
     if (!doBundle) {
       throw '';
     } else if (doBundle.bundleRes && doBundle.bundleRes.bundleId) {
-      await ctx.reply(
-        `🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${doBundle.bundleRes.bundleId}' target='_blank'>here</a>.
-            Pool ID: ${doBundle.poolId}`,
-        {
+      const message = `
+      🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${doBundle.bundleRes.bundleId}' target='_blank'>here</a>.
+         Pool ID: ${doBundle.poolId}`;
+
+      if (processMessageId > 0) {
+        await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
           parse_mode: 'HTML',
-        },
-      );
+        });
+      } else {
+        await ctx.reply(message, { parse_mode: 'HTML' });
+      }
 
       await serviceLiquidityPool.saveLiquidityPool({
         chatId: ctx.chat!.id,
@@ -567,6 +581,14 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
     }
   } catch (err: any) {
     console.log(err);
-    await ctx.reply(`🔴 Transaction Failed : ${err}`);
+
+    const message = `🔴 Transaction Failed : ${err}`;
+    if (processMessageId > 0) {
+      await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.reply(message);
+    }
   }
 }

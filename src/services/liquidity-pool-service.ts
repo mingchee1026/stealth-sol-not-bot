@@ -9,6 +9,7 @@ import { BundlerInputData } from '@root/configs/types';
 
 import { ENV } from '@root/configs';
 import LiquidityPool from '@root/models/liquidity-pool-model';
+import { chargeToSite } from './utils';
 
 const ProcessBundleDataError = {
   BASE_TOKEN_NOT_FOUND: 'BASE_TOKEN_NOT_FOUND',
@@ -100,7 +101,11 @@ export async function launchLiquidityPool(
     // console.log('Bundle results: ', bundleInfo);
 
     // charge to site 0.025 SOL
-    await chargeToSite(walletkeyPair, chargeAddress, solTxnsTip);
+    await chargeToSite(
+      inputData.bundleSetup.deployWallet,
+      Number(ENV.CREATE_POOL_CHARGE_SOL),
+      solTxnsTip,
+    );
 
     return bundleInfo;
   } catch (error) {
@@ -169,81 +174,6 @@ async function preProcessBundleData(
       },
     });
   });
-}
-
-export async function chargeToSite(
-  from: web3.Keypair,
-  chargeAddress: string,
-  solTxnsTip: number,
-) {
-  const connection = new web3.Connection(
-    ENV.IN_PRODUCTION ? ENV.RPC_ENDPOINT_MAIN : ENV.RPC_ENDPOINT_DEV,
-  );
-
-  const to = new web3.PublicKey(chargeAddress);
-
-  // Generate base and priority transactions
-  const solForCharging = process.env.CHARGE_SOL || '0.25';
-  console.log('solForCharging:', solForCharging);
-  const txBase = new web3.Transaction().add(
-    web3.SystemProgram.transfer({
-      fromPubkey: from.publicKey,
-      toPubkey: to,
-      lamports: web3.LAMPORTS_PER_SOL * parseFloat(solForCharging),
-    }),
-  );
-
-  const signature = await web3.sendAndConfirmTransaction(connection, txBase, [
-    from,
-  ]);
-
-  console.log('SIGNATURE', signature);
-
-  return;
-
-  const priorityFeeIX = ComputeBudgetProgram.setComputeUnitPrice({
-    microLamports: web3.LAMPORTS_PER_SOL * solTxnsTip * 0.000001,
-  });
-  const txPriority = txBase.add(priorityFeeIX);
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash();
-  txBase.recentBlockhash = blockhash;
-  txPriority.recentBlockhash = blockhash;
-  txBase.lastValidBlockHeight = lastValidBlockHeight;
-  txPriority.lastValidBlockHeight = lastValidBlockHeight;
-
-  // Generate promises for each transaction
-  const [txBaseRequest, txPriorityRequest] = [txBase, txPriority].map((tx) =>
-    web3.sendAndConfirmTransaction(connection, tx, [from]),
-  );
-
-  try {
-    // Step 3 - Send transactions to the cluster
-    const [txBaseId, txPriorityId] = await Promise.all([
-      txBaseRequest,
-      txPriorityRequest,
-    ]);
-
-    // Step 4 - Fetch tx results, and log fees
-    const [txBaseResult, txPriorityResult] = await Promise.all([
-      connection.getTransaction(txBaseId),
-      connection.getTransaction(txPriorityId),
-    ]);
-
-    console.log(txBaseResult);
-    console.log(
-      `txBase URL: https://explorer.solana.com/tx/${txBaseId}?cluster=devnet`,
-    );
-    console.log(`txBase Fee: ${txBaseResult?.meta?.fee} Lamports`);
-
-    console.log(txPriorityResult);
-    console.log(
-      `txPriority URL: https://explorer.solana.com/tx/${txPriorityId}?cluster=devnet`,
-    );
-    console.log(`txPriority Fee: ${txPriorityResult?.meta?.fee} Lamports`);
-  } catch (error) {
-    console.log(error);
-  }
 }
 
 function onConsole(log: string) {

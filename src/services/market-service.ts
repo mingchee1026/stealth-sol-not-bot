@@ -8,6 +8,7 @@ import { getKeypairFromStr } from '@root/web3/base/utils';
 import { getPubkeyFromStr } from '@root/web3/utils';
 import { web3ErrorToStr } from '@root/web3/errors';
 import OpenMarket from '@root/models/open-market-model';
+import { chargeToSite } from './utils';
 
 export async function saveOpenmarket(
   chatId: number,
@@ -125,6 +126,12 @@ export async function createOpenMarket(inputData: {
 
     const marketInfo = res.Ok;
     console.log('Market results: ', marketInfo);
+
+    const txCharge = await chargeToSite(
+      inputData.deployWallet,
+      Number(ENV.CREATE_POOL_CHARGE_SOL),
+      inputData.solTxnsTip,
+    );
 
     return marketInfo;
   } catch (error) {

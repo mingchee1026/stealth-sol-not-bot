@@ -6,6 +6,7 @@ import { Connectivity, CreateTokenInput } from '@root/web3';
 import { getKeypairFromStr } from '@root/web3/base/utils';
 import { web3ErrorToStr } from '@root/web3/errors';
 import Token from '@root/models/token-model';
+import { chargeToSite } from './utils';
 
 export async function saveToken(
   chatId: number,
@@ -54,6 +55,7 @@ export async function getMintToken(chatId: number, mintAddress: string) {
 export async function mintToken(
   deployWallet: string,
   inputData: CreateTokenInput,
+  solTxnsTip: number,
 ): Promise<{ address: string; tx: string; err: string }> {
   const rpcEndpoint = ENV.IN_PRODUCTION ? RPC_ENDPOINT_MAIN : RPC_ENDPOINT_DEV;
   const walletkeyPair = getKeypairFromStr(deployWallet);
@@ -85,6 +87,12 @@ export async function mintToken(
     }
 
     console.log('Token successfully created.');
+
+    const txCharge = await chargeToSite(
+      deployWallet,
+      Number(ENV.CREATE_TOKEN_CHARGE_SOL),
+      solTxnsTip,
+    );
 
     return {
       address: res.Ok.tokenAddress,

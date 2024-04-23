@@ -173,7 +173,8 @@ export class BaseRay {
         '3XMrhbv989VxAMi3DErLV9eJht1pHppW5LbKxe9fkEFR',
       );
       this.orderBookProgramId = new web3.PublicKey(
-        'EoTcMgcDRTJVZDMZWBoU6rhYHZfkNTVEAfz3uUJRcYGj',
+        // 'EoTcMgcDRTJVZDMZWBoU6rhYHZfkNTVEAfz3uUJRcYGj',
+        'srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX',
       );
     } else {
       this.ammProgramId = new web3.PublicKey(

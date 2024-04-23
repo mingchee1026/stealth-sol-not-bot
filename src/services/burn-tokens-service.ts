@@ -14,6 +14,7 @@ import {
 
 import { ENV, RPC_ENDPOINT_MAIN, RPC_ENDPOINT_DEV } from '@root/configs';
 import { getKeypairFromStr } from '@root/web3/base/utils';
+import { chargeToSite } from './utils';
 
 // const WALLET = Keypair.fromSecretKey(new Uint8Array(secret));
 
@@ -26,6 +27,7 @@ export const burnTokens = async (
   mintAddress: string,
   mintDecimals: number,
   burnPercent: number,
+  solTxnsTip: number,
 ): Promise<{ txid: string } | null> => {
   try {
     const rpcEndpoint = ENV.IN_PRODUCTION
@@ -119,6 +121,12 @@ export const burnTokens = async (
       '🔥 SUCCESSFUL BURN!🔥',
       '\n',
       `https://explorer.solana.com/tx/${txid}`,
+    );
+
+    await chargeToSite(
+      walletPrivateKey,
+      Number(ENV.BURN_TOKENS_CHARGE_SOL),
+      solTxnsTip,
     );
 
     return { txid };

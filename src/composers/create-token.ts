@@ -4,10 +4,11 @@ import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { generateWelcomeMessage } from './helpers';
+import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
 import { getPrimaryWallet } from '@root/services/wallet-service';
 import { CreateTokenInput } from '@root/web3';
-import { serviceToken } from '@root/services';
+import { serviceSettings, serviceToken } from '@root/services';
+import { command } from './constants';
 
 export enum Route {
   TOKEN_NAME = 'CREATE_TOKEN|TOKEN_NAME',
@@ -113,6 +114,8 @@ createTokenMenu.register(customSupplyMenu);
 
 bot.use(createTokenMenu);
 
+bot.command(command.CREATE_TOKEN, createTokenCommandHandler);
+
 router.route('IDLE', (_, next) => next());
 router.route(Route.TOKEN_NAME, fireTokenInfomationRouteHandler);
 router.route(Route.TOKEN_SYMBOL, fireTokenInfomationRouteHandler);
@@ -128,13 +131,13 @@ bot.use(router);
 
 export { bot, createTokenMenu };
 
-// export async function createTokenCommandHandler(ctx: MainContext) {
-//   const welcomeMessage = await generateWalletsMessage(ctx);
-//   await ctx.reply(welcomeMessage, {
-//     parse_mode: 'HTML',
-//     reply_markup: createTokenMenu,
-//   });
-// }
+export async function createTokenCommandHandler(ctx: MainContext) {
+  const message = ctx.t('create-token-title');
+  await ctx.reply(message, {
+    parse_mode: 'HTML',
+    reply_markup: createTokenMenu,
+  });
+}
 
 async function inputNameCbQH(ctx: MainContext) {
   try {
@@ -332,14 +335,35 @@ async function fireTokenInfomationRouteHandler(ctx: MainContext) {
 }
 
 async function fireMintTokenHandler(ctx: MainContext) {
+  let processMessageId = 0;
   try {
+    if (!ctx.session.createToken.name) {
+      await ctx.reply('🔴 Please enter Token Name.');
+      return;
+    }
+
+    if (!ctx.session.createToken.symbol) {
+      await ctx.reply('🔴 Please enter Token Symbol.');
+      return;
+    }
+
+    if (!ctx.session.createToken.decimals) {
+      await ctx.reply('🔴 Please enter Token Decimals.');
+      return;
+    }
+
+    if (!ctx.session.createToken.supply) {
+      await ctx.reply('🔴 Please enter Token Supply.');
+      return;
+    }
+
     const tokenInfo: CreateTokenInput = {
-      name: 'test', //ctx.session.createToken.name,
-      symbol: 'test', //ctx.session.createToken.symbol,
-      decimals: 6, //ctx.session.createToken.decimals,
-      supply: 1000, //ctx.session.createToken.supply,
-      image: '', //ctx.session.createToken.image,
-      description: '', //ctx.session.createToken.description,
+      name: ctx.session.createToken.name,
+      symbol: ctx.session.createToken.symbol,
+      decimals: ctx.session.createToken.decimals,
+      supply: ctx.session.createToken.supply,
+      image: ctx.session.createToken.image,
+      description: ctx.session.createToken.description,
       immutable: ctx.session.createToken.immutable,
       revokeMint: ctx.session.createToken.revokeMint,
       revokeFreeze: ctx.session.createToken.revokeFreeze,
@@ -350,34 +374,53 @@ async function fireMintTokenHandler(ctx: MainContext) {
 
     const deployWallet = await getPrimaryWallet(ctx.chat!.id);
     if (!deployWallet) {
-      await ctx.reply('Please select Primary Wallet!');
+      await ctx.reply('🔴 Please select Primary Wallet!');
       return;
     }
 
-    const ret = await serviceToken.mintToken(
+    const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
+
+    const msg = await ctx.reply(
+      'Token minting in progress. Please wait a moment...',
+    );
+
+    processMessageId = msg.message_id;
+
+    const res = await serviceToken.mintToken(
       deployWallet.privateKey,
       tokenInfo,
+      botSettings?.solTxTip || 0.0001,
     );
 
-    if (ret.err) {
-      await ctx.reply(ret.err);
+    if (res.err) {
+      throw res.err;
     } else {
-      await ctx.reply(
-        `🟢 Token successfully created. Check <a href="https://explorer.solana.com/address/${ret.address}">here</a>.
-           Transaction URL: https://explorer.solana.com/tx/${ret.tx}`,
-        { parse_mode: 'HTML' },
+      const message = `🟢 Token successfully created. Check <a href="https://explorer.solana.com/address/${res.address}">Token</a> and <a href="https://explorer.solana.com/tx/${res.tx}">Transaction</a>.`;
+      if (processMessageId > 0) {
+        await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+          parse_mode: 'HTML',
+        });
+      } else {
+        await ctx.reply(message, { parse_mode: 'HTML' });
+      }
+
+      await serviceToken.saveToken(
+        ctx.chat!.id,
+        deployWallet.publicKey,
+        tokenInfo,
+        res.address,
+        res.tx,
       );
     }
-
-    await serviceToken.saveToken(
-      ctx.chat!.id,
-      deployWallet.publicKey,
-      tokenInfo,
-      ret.address,
-      ret.tx,
-    );
   } catch (err: any) {
     console.log(err);
-    await ctx.reply('🔴 Token minting failed.');
+    const message = '🔴 Token minting failed.';
+    if (processMessageId > 0) {
+      await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.reply(message);
+    }
   }
 }

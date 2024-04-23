@@ -6,10 +6,10 @@ import { Menu } from '@grammyjs/menu';
 import { MainContext } from '@root/configs/context';
 import { generateWelcomeMessage } from './helpers';
 import { getPrimaryWallet } from '@root/services/wallet-service';
-import { CreateTokenInput } from '@root/web3';
-import { serviceOpenmarket } from '@root/services';
+import { serviceSettings, serviceOpenmarket } from '@root/services';
 import { saveOpenmarket } from '@root/services/market-service';
 import { QUOTE_ADDRESS } from '@root/configs';
+import { command } from './constants';
 
 export enum Route {
   MARKET_BASE_TOKEN = 'CREATE_MARKET|MARKET_BASE_TOKEN',
@@ -101,6 +101,8 @@ createMarketMenu.register(customTickMenu);
 
 bot.use(createMarketMenu);
 
+bot.command(command.CREATE_MARKET, createTokenCommandHandler);
+
 router.route('IDLE', (_, next) => next());
 router.route(Route.MARKET_BASE_TOKEN, fireMarketInfomationRouteHandler);
 router.route(Route.MARKET_LOT_SIZE, fireMarketInfomationRouteHandler);
@@ -113,13 +115,13 @@ bot.use(router);
 
 export { bot, createMarketMenu };
 
-// export async function createTokenCommandHandler(ctx: MainContext) {
-//   const welcomeMessage = await generateWalletsMessage(ctx);
-//   await ctx.reply(welcomeMessage, {
-//     parse_mode: 'HTML',
-//     reply_markup: createTokenMenu,
-//   });
-// }
+export async function createTokenCommandHandler(ctx: MainContext) {
+  const message = ctx.t('create-market-title');
+  await ctx.reply(message, {
+    parse_mode: 'HTML',
+    reply_markup: createMarketMenu,
+  });
+}
 
 async function inputBaseTokenCbQH(ctx: MainContext) {
   try {
@@ -263,6 +265,7 @@ async function fireMarketInfomationRouteHandler(ctx: MainContext) {
 }
 
 async function fireCreateMarketCbQH(ctx: MainContext) {
+  let processMessageId = 0;
   try {
     // console.log(ctx.session.createMarket);
 
@@ -282,6 +285,14 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
         ? QUOTE_ADDRESS.SOL_ADDRESS
         : QUOTE_ADDRESS.USDC_ADDRESS;
 
+    const msg = await ctx.reply(
+      'Market creating in progress. Please wait a moment...',
+    );
+
+    const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
+
+    processMessageId = msg.message_id;
+
     const ret = await serviceOpenmarket.createOpenMarket({
       baseMint: ctx.session.createMarket.baseMint,
       quoteMint,
@@ -291,34 +302,46 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
       orderbookLength: ctx.session.createMarket.orderbookLength,
       requestQueueLength: ctx.session.createMarket.requestLength,
       deployWallet: deployWallet.privateKey,
-      solTxnsTip: 0.0001,
+      solTxnsTip: botSettings?.solTxTip || 0.0001,
     });
 
     if (!ret) {
       throw 'Failed create market';
     } else {
-      await ctx.reply(
-        `🟢 Market successfully created.
+      const message = `
+      🟢 Market successfully created.
           Market Id:       ${ret.marketId}
-        <a href="https://openbook-explorer.xyz/market/${ret.marketId}">To Market</a>
-        Transaction URL: https://explorer.solana.com/tx/${ret.txSignature}`,
-        { parse_mode: 'HTML' },
+          Check <a href="https://openbook-explorer.xyz/market/${ret.marketId}">Market</a> and <a href="https://explorer.solana.com/tx/${ret.txSignature}">transaction</a>.`;
+
+      if (processMessageId > 0) {
+        await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+          parse_mode: 'HTML',
+        });
+      } else {
+        await ctx.reply(message, { parse_mode: 'HTML' });
+      }
+
+      await saveOpenmarket(
+        ctx.chat!.id,
+        ctx.session.createMarket.baseMint,
+        ctx.session.createMarket.quoteMint,
+        ctx.session.createMarket.baseLogSize,
+        ctx.session.createMarket.tickSize,
+        ctx.session.createMarket.eventLength,
+        ctx.session.createMarket.requestLength,
+        ctx.session.createMarket.orderbookLength,
+        ret.marketId,
+        ret.txSignature,
       );
     }
-
-    await saveOpenmarket(
-      ctx.chat!.id,
-      ctx.session.createMarket.baseMint,
-      ctx.session.createMarket.quoteMint,
-      ctx.session.createMarket.baseLogSize,
-      ctx.session.createMarket.tickSize,
-      ctx.session.createMarket.eventLength,
-      ctx.session.createMarket.requestLength,
-      ctx.session.createMarket.orderbookLength,
-      ret.marketId,
-      ret.txSignature,
-    );
   } catch (err: any) {
-    await ctx.reply('🔴 Failed create market.');
+    const message = '🔴 Failed create market.';
+    if (processMessageId > 0) {
+      await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.reply(message);
+    }
   }
 }

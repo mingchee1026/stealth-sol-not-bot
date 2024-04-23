@@ -58,8 +58,8 @@ bot.use(router);
 export { bot, settingsMenu };
 
 export async function settingsCommandHandler(ctx: MainContext) {
-  const welcomeMessage = await generateWalletsMessage(ctx);
-  await ctx.reply(welcomeMessage, {
+  const message = ctx.t('settings-title');
+  await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: settingsMenu,
   });
