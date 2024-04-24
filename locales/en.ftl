@@ -1,9 +1,14 @@
 # commands
 start = test
 command-start = Start (greetings message)
-command-settings = Bot Settings
+command-createtoken = Create Token
+command-createmarket = Create Market
+command-createliquidity = Add Liquidity & Snipe
+command-burn = Burn Tokens
+command-remove = Remove LP
 command-wallets = Walltes
-command-help = Help / FAQ
+command-settings = Bot Settings
+command-tutorial = Help / FAQ
 
 # Main menu
 main-welcome =
@@ -27,7 +32,7 @@ label-help = ❓ Help / FAQ
 
 #Wallets menu
 wallets-title =
-  Wallets ({$countofWallets}) 💳 <em>{$primarySol} SOL</em>, TOTAL <em>{$totalSol}</em> SOL
+  💰 Wallets ({$countofWallets}) 💳 <em>{$primarySol} SOL</em>, TOTAL <em>{$totalSol}</em> SOL
 
   👇 Select Primary Wallet to use (Only one)
   ----------------------------------------------------------------------------------------------------
@@ -46,7 +51,7 @@ wallets-enter-privateKey =
 
 #Settings menu
 settings-title =
-  👇 Enter Bot settings
+  ⚙ Please enter Bot settings
   ----------------------------------------------------------
 
 label-solana-tx-tip = Set Solana Transaction Tip
@@ -58,7 +63,16 @@ settings-enter-bundle-tip = Enter Bundle Tip:
 
 #Create Token menu
 create-token-title =
-  👇 Enter Token Information to create
+  🪙  Enter Token Information to create
+        Name: {$name}
+        Symbol: {$symbol}
+        Decimals: {$decimals}
+        Supply: {$supply}
+        Image URL: {$image}
+        Description: {$description}
+        Website: {$website}
+        Telegram: {$telegram}
+        Twitter: {$twitter}
   --------------------------------------------------------------------------------------------------
 
 label-name = 📛 Name
@@ -86,7 +100,14 @@ create-token-enter-twitter = Enter Token Twitter URL:
 
 #Create Market menu
 create-market-title =
-  👇 Enter Market Information to create
+  🏪 Enter Market Information to create
+        Base Token: {$baseToken}
+        Quote Token: {$quoteToken}
+        Minimum Buy: {$minBuy}
+        Tick Size: {$tickSize}
+        Event Length: {$eventLength}
+        Request Length: {$requestLength}
+        Orderbook Length: {$orderbookLength}
   --------------------------------------------------------------------------------------------------
 
 label-token-address = 📊 Token Address
@@ -105,7 +126,11 @@ label-custom = Custom
 
 #Create Market menu
 create-pool-title =
-  👇 Enter Liquidity Pool information to create
+  💦 Enter Liquidity Pool information to create
+        Market ID: {$marketId}
+        Quote Liquidity: {$tokenLiquidity}
+        Amount Percent: {$amountPercent} %
+        Buyers: {$buyers}
   --------------------------------------------------------------------------------------------------
 
 label-liquidity-amount = 💦 Quote Token Liquidity
@@ -113,14 +138,17 @@ label-liquidity-percent = 🔢 Amount Percent
 
 #Remove Liquidity menu
 remove-liquidity-title =
-  👇 Remove Liquidity
+  🔻 Remove Liquidity
+        Token Address: {$tokenAddress}
   --------------------------------------------------------------------------------------------------
 
 label-remove-liquidity = 🔥 Remove Liquidity
 
 #Burn Tokens menu
 burn-tokens-title =
-  👇 Burn Tokens
+  🔥 Burn Tokens
+        Token Address: {$tokenAddress}
+        Amount Percent: {$amount} %
   --------------------------------------------------------------------------------------------------
 
 label-base-amount = Base Amount
