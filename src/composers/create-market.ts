@@ -4,7 +4,7 @@ import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { generateWelcomeMessage } from './helpers';
+import { generateCreateMarketMessage } from './helpers';
 import { getPrimaryWallet } from '@root/services/wallet-service';
 import { serviceSettings, serviceOpenmarket } from '@root/services';
 import { saveOpenmarket } from '@root/services/market-service';
@@ -37,8 +37,11 @@ const createMarketMenu = new Menu<MainContext>('create-market-menu')
       return `${value === 'SOL' ? '✅ ' : ''} SOL`;
     },
     async (ctx: any) => {
-      ctx.session.createMarket.quoteMint = 'SOL';
-      ctx.menu.update();
+      if (ctx.session.createMarket.quoteMint !== 'SOL') {
+        ctx.session.createMarket.quoteMint = 'SOL';
+        const message = await generateCreateMarketMessage(ctx);
+        ctx.editMessageText(message);
+      }
     },
   )
   .text(
@@ -47,8 +50,11 @@ const createMarketMenu = new Menu<MainContext>('create-market-menu')
       return `${value === 'USDT' ? '✅ ' : ''} USDT`;
     },
     async (ctx: any) => {
-      ctx.session.createMarket.quoteMint = 'USDT';
-      ctx.menu.update();
+      if (ctx.session.createMarket.quoteMint !== 'USDT') {
+        ctx.session.createMarket.quoteMint = 'USDT';
+        const message = await generateCreateMarketMessage(ctx);
+        ctx.editMessageText(message);
+      }
     },
   )
   .row()
@@ -62,21 +68,25 @@ const createMarketMenu = new Menu<MainContext>('create-market-menu')
   .row()
   .text((ctx) => ctx.t('label-orderbook-length'), inputOrderbookLengthCbQH)
   .row()
-  .text((ctx) => ctx.t('label-create-openpool-market'), fireCreateMarketCbQH)
-  .row()
-  // .text('❌🔙  Close', doneCbQH);
-  .back('🔙  Close', async (ctx) => {
-    const welcomeMessage = await generateWelcomeMessage(ctx);
-    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
-  });
+  .text((ctx) => ctx.t('label-create-openpool-market'), fireCreateMarketCbQH);
+// .row()
+// .text('❌🔙  Close', doneCbQH);
+// .back('🔙  Close', async (ctx) => {
+//   const welcomeMessage = await generateWelcomeMessage(ctx);
+//   await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+// });
 
 const customLotMenu = new Menu<MainContext>('custom-lot-menu')
   .back('100', async (ctx) => {
     ctx.session.createMarket.baseLogSize = 100;
+    const message = await generateCreateMarketMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .back('1000', async (ctx) => {
     ctx.session.createMarket.baseLogSize = 1000;
+    const message = await generateCreateMarketMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .text((ctx) => ctx.t('label-custom'), inputLotSizeCbQH)
@@ -86,10 +96,14 @@ const customLotMenu = new Menu<MainContext>('custom-lot-menu')
 const customTickMenu = new Menu<MainContext>('custom-tick-menu')
   .back('0.0000001', async (ctx) => {
     ctx.session.createMarket.tickSize = 0.0000001;
+    const message = await generateCreateMarketMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .back('0.00000001', async (ctx) => {
     ctx.session.createMarket.tickSize = 0.00000001;
+    const message = await generateCreateMarketMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .text((ctx) => ctx.t('label-custom'), inputTickSizeCbQH)
@@ -116,11 +130,13 @@ bot.use(router);
 export { bot, createMarketMenu };
 
 export async function createTokenCommandHandler(ctx: MainContext) {
-  const message = ctx.t('create-market-title');
-  await ctx.reply(message, {
+  ctx.session.topMsgId = 0;
+  const message = await generateCreateMarketMessage(ctx);
+  const ret = await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: createMarketMenu,
   });
+  ctx.session.createMarket.msgId = ret.message_id;
 }
 
 async function inputBaseTokenCbQH(ctx: MainContext) {
@@ -241,7 +257,7 @@ async function fireMarketInfomationRouteHandler(ctx: MainContext) {
   } catch (err: any) {
     console.log(err);
   } finally {
-    // ctx.session.step = 'IDLE';
+    ctx.session.step = 'IDLE';
 
     try {
       await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
@@ -249,18 +265,36 @@ async function fireMarketInfomationRouteHandler(ctx: MainContext) {
         ctx.chat!.id,
         ctx.update.message!.reply_to_message!.message_id,
       );
-    } catch (err) {}
 
-    // const walletsMessage = await generateWalletsMessage(ctx);
-    // await ctx.api.editMessageText(
-    //   ctx.chat!.id,
-    //   ctx.session.topMsgId,
-    //   walletsMessage,
-    //   {
-    //     parse_mode: 'HTML',
-    //     reply_markup: createTokenMenu,
-    //   },
-    // );
+      debug('ctx.session.topMsgId', ctx.session.topMsgId);
+      debug('ctx.session.createMarket.msgId', ctx.session.createMarket.msgId);
+
+      const message = await generateCreateMarketMessage(ctx);
+
+      if (ctx.session.topMsgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.topMsgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: createMarketMenu,
+          },
+        );
+      }
+
+      if (ctx.session.createMarket.msgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.createMarket.msgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: createMarketMenu,
+          },
+        );
+      }
+    } catch (err) {}
   }
 }
 
