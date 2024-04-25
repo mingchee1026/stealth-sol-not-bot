@@ -4,7 +4,7 @@ import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { generateWelcomeMessage } from './helpers';
+import { generateBurnTokensMessage } from './helpers';
 import { serviceSettings, serviceWallets } from '@root/services';
 import { serviceToken } from '@root/services';
 import { serviceBurnTokens } from '@root/services';
@@ -36,8 +36,11 @@ const burnLiquidityMenu = new Menu<MainContext>('burn-liquidity-menu')
       return `${value === 100 ? '✅ ' : ''} 100%`;
     },
     async (ctx: any) => {
-      ctx.session.burnLiquidity.burnAmount = 100;
-      ctx.menu.update();
+      if (ctx.session.burnLiquidity.burnAmount !== 100) {
+        ctx.session.burnLiquidity.burnAmount = 100;
+        const message = await generateBurnTokensMessage(ctx);
+        ctx.editMessageText(message);
+      }
     },
   )
   .text(async (ctx: any) => {
@@ -45,13 +48,13 @@ const burnLiquidityMenu = new Menu<MainContext>('burn-liquidity-menu')
     return `${value < 100 ? '✅ ' : ''} X%`;
   }, inputBurnAmountCbQH)
   .row()
-  .text((ctx) => ctx.t('label-burn-liquidity'), fireBurnLiquidityCbQH)
-  .row()
-  // .text('🔙  Close', doneCbQH);
-  .back('🔙  Close', async (ctx) => {
-    const welcomeMessage = await generateWelcomeMessage(ctx);
-    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
-  });
+  .text((ctx) => ctx.t('label-burn-liquidity'), fireBurnLiquidityCbQH);
+// .row()
+// .text('🔙  Close', doneCbQH);
+// .back('🔙  Close', async (ctx) => {
+//   const welcomeMessage = await generateWelcomeMessage(ctx);
+//   await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+// });
 
 bot.use(burnLiquidityMenu);
 
@@ -66,11 +69,14 @@ bot.use(router);
 export { bot, burnLiquidityMenu };
 
 export async function burnLiquidityCommandHandler(ctx: MainContext) {
-  const message = ctx.t('burn-tokens-title');
-  await ctx.reply(message, {
+  debug('burnLiquidityCommandHandler');
+  ctx.session.topMsgId = 0;
+  const message = await generateBurnTokensMessage(ctx);
+  const ret = await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: burnLiquidityMenu,
   });
+  ctx.session.burnLiquidity.msgId = ret.message_id;
 }
 
 async function inputBaseTokenCbQH(ctx: MainContext) {
@@ -121,7 +127,7 @@ async function fireBurnLiquidityRouteHandler(ctx: MainContext) {
   } catch (err: any) {
     console.log(err);
   } finally {
-    // ctx.session.step = 'IDLE';
+    ctx.session.step = 'IDLE';
 
     try {
       await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
@@ -129,18 +135,36 @@ async function fireBurnLiquidityRouteHandler(ctx: MainContext) {
         ctx.chat!.id,
         ctx.update.message!.reply_to_message!.message_id,
       );
-    } catch (err) {}
 
-    // const walletsMessage = await generateWalletsMessage(ctx);
-    // await ctx.api.editMessageText(
-    //   ctx.chat!.id,
-    //   ctx.session.topMsgId,
-    //   walletsMessage,
-    //   {
-    //     parse_mode: 'HTML',
-    //     reply_markup: createTokenMenu,
-    //   },
-    // );
+      debug('ctx.session.topMsgId', ctx.session.topMsgId);
+      debug('ctx.session.burnLiquidity.msgId', ctx.session.burnLiquidity.msgId);
+
+      const message = await generateBurnTokensMessage(ctx);
+      debug('fireBurnLiquidityRouteHandler');
+      if (ctx.session.topMsgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.topMsgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: burnLiquidityMenu,
+          },
+        );
+      }
+
+      if (ctx.session.burnLiquidity.msgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.burnLiquidity.msgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: burnLiquidityMenu,
+          },
+        );
+      }
+    } catch (err) {}
   }
 }
 
@@ -148,7 +172,7 @@ async function fireBurnLiquidityCbQH(ctx: MainContext) {
   let processMessageId = 0;
   try {
     console.log(ctx.session.burnLiquidity);
-
+    console.log(ctx.chat!.id, ctx.session.burnLiquidity.tokenAddress);
     const mintToken = await serviceToken.getMintToken(
       ctx.chat!.id,
       ctx.session.burnLiquidity.tokenAddress,
@@ -174,12 +198,14 @@ async function fireBurnLiquidityCbQH(ctx: MainContext) {
 
     const walletPrivateKey = primaryWallet.privateKey;
     const mintAddress = mintToken.mintAddress;
+    const mintSupply = mintToken.supply;
     const mintDecimals = mintToken.decimals;
     const burnPercent = ctx.session.burnLiquidity.burnAmount;
 
     const res = await serviceBurnTokens.burnTokens(
       walletPrivateKey,
       mintAddress,
+      mintSupply,
       mintDecimals,
       burnPercent,
       botSettings?.solTxTip || 0.0001,

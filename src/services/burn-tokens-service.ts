@@ -25,6 +25,7 @@ import { chargeToSite } from './utils';
 export const burnTokens = async (
   walletPrivateKey: string,
   mintAddress: string,
+  supply: number,
   mintDecimals: number,
   burnPercent: number,
   solTxnsTip: number,
@@ -59,10 +60,7 @@ export const burnTokens = async (
     // Step 2 - Create Burn Instructions
     console.log(`Step 2 - Create Burn Instructions`);
 
-    const balanceOfToken = await getTokenBalanceSpl(
-      connection,
-      new PublicKey(mintAddress),
-    );
+    const balanceOfToken = await getTokenBalanceSpl(connection, mintAddress);
 
     console.log(`Token Balance: ${balanceOfToken}`);
 
@@ -136,16 +134,21 @@ export const burnTokens = async (
   }
 };
 
-const getTokenBalanceSpl = async (
+export const getTokenBalanceSpl = async (
   connection: Connection,
-  tokenAccount: PublicKey,
+  tokenAccount: string,
 ) => {
-  const info = await getAccount(connection, tokenAccount);
-  console.log('info:', info);
-  const amount = Number(info.amount);
-  console.log('amount:', amount);
-  const mint = await getMint(connection, info.mint);
-  const balance = amount / 10 ** mint.decimals;
-  console.log('Balance (using Solana-Web3.js): ', balance);
+  // const rpcEndpoint = ENV.IN_PRODUCTION ? RPC_ENDPOINT_MAIN : RPC_ENDPOINT_DEV;
+  // const connection = new Connection(rpcEndpoint);
+
+  // const info = await getAccount(connection, new PublicKey(tokenAccount));
+  // console.log('info:', info);
+  // const amount = Number(info.amount);
+  // console.log('amount:', amount);
+  const mint = await getMint(connection, new PublicKey(tokenAccount));
+  console.log('Supply: ', mint.supply);
+  const balance = Number(mint.supply) / 10 ** mint.decimals;
+  console.log('Balance: ', balance);
+
   return balance;
 };
