@@ -5,7 +5,7 @@ import { Menu } from '@grammyjs/menu';
 import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 import { MainContext } from '@root/configs/context';
-import { generateWelcomeMessage } from './helpers';
+import { generateCreatePoolMessage } from './helpers';
 import { getPrimaryWallet } from '@root/services/wallet-service';
 import {
   serviceSettings,
@@ -78,24 +78,29 @@ const createPoolMenu = new Menu<MainContext>('create-pool-menu')
   .text((ctx) => ctx.t('label-liquidity-amount'), inputLiquidityAmountCbQH)
   .text((ctx) => ctx.t('label-liquidity-percent'), inputLiquidityPercentCbQH)
   .row()
-  .text((ctx) => `🛒 Buyers Information`)
+  .text(
+    (ctx) => `🛒 Buyers Information`,
+    (ctx: any) => {
+      return false;
+    },
+  )
   .row()
   .text('Buyer 1 Sol Account', inputBuyer1SolAmountCbQH)
   .text('Buyer 1 Private Key', inputBuyer1PrivateKeyCbQH)
   .row()
-  .text('Buyer 1 Sol Account', inputBuyer2SolAmountCbQH)
-  .text('Buyer 1 Private Key', inputBuyer2PrivateKeyCbQH)
+  .text('Buyer 2 Sol Account', inputBuyer2SolAmountCbQH)
+  .text('Buyer 2 Private Key', inputBuyer2PrivateKeyCbQH)
   .row()
-  .text('Buyer 1 Sol Account', inputBuyer3SolAmountCbQH)
-  .text('Buyer 1 Private Key', inputBuyer3PrivateKeyCbQH)
+  .text('Buyer 3 Sol Account', inputBuyer3SolAmountCbQH)
+  .text('Buyer 3 Private Key', inputBuyer3PrivateKeyCbQH)
   .row()
-  .text('⚡ Bundle', fireCreateMarketCbQH)
-  .row()
-  // .text('❌🔙  Close', doneCbQH);
-  .back('🔙  Close', async (ctx) => {
-    const welcomeMessage = await generateWelcomeMessage(ctx);
-    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
-  });
+  .text('⚡ Bundle', fireCreatePoolCbQH);
+// .row()
+// .text('❌🔙  Close', doneCbQH);
+// .back('🔙  Close', async (ctx) => {
+//   const welcomeMessage = await generateWelcomeMessage(ctx);
+//   await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+// });
 
 const customLotMenu = new Menu<MainContext>('custom-lot-menu')
   .back('100', async (ctx) => {
@@ -123,8 +128,8 @@ const customTickMenu = new Menu<MainContext>('custom-tick-menu')
   .row()
   .back('🔙  Go back');
 
-createPoolMenu.register(customLotMenu);
-createPoolMenu.register(customTickMenu);
+// createPoolMenu.register(customLotMenu);
+// createPoolMenu.register(customTickMenu);
 
 bot.use(createPoolMenu);
 
@@ -149,16 +154,18 @@ bot.use(router);
 export { bot, createPoolMenu };
 
 export async function createPoolCommandHandler(ctx: MainContext) {
-  const message = ctx.t('create-pool-title');
-  await ctx.reply(message, {
+  ctx.session.topMsgId = 0;
+  const message = await generateCreatePoolMessage(ctx);
+  const ret = await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: createPoolMenu,
   });
+  ctx.session.createPool.msgId = ret.message_id;
 }
 
 async function inputMarketIdCbQH(ctx: MainContext) {
   try {
-    ctx.session.step = Route.POOL_BASE_TOKEN;
+    ctx.session.step = Route.POOL_MARKET_ID;
 
     await ctx.reply(`Enter Market ID:`, {
       parse_mode: 'HTML',
@@ -359,22 +366,70 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
         ctx.session.createPool.amountOfPercentage = Number(text);
         break;
       case Route.POOL_BUYER_1_SOL:
-        ctx.session.createPool.buyerInfos[0].buyAmount = Number(text);
+        if (ctx.session.createPool.buyerInfos[0]) {
+          ctx.session.createPool.buyerInfos[0].amount = Number(text);
+        } else {
+          ctx.session.createPool.buyerInfos[0] = {
+            id: 1,
+            amount: Number(text),
+            privateKey: '',
+          };
+        }
         break;
       case Route.POOL_BUYER_1_PRIVATE_KEY:
-        ctx.session.createPool.buyerInfos[0].buyerAuthority = text;
+        if (ctx.session.createPool.buyerInfos[0]) {
+          ctx.session.createPool.buyerInfos[0].privateKey = text;
+        } else {
+          ctx.session.createPool.buyerInfos[0] = {
+            id: 1,
+            amount: 0,
+            privateKey: text,
+          };
+        }
         break;
       case Route.POOL_BUYER_2_SOL:
-        ctx.session.createPool.buyerInfos[1].buyAmount = Number(text);
+        if (ctx.session.createPool.buyerInfos[1]) {
+          ctx.session.createPool.buyerInfos[1].amount = Number(text);
+        } else {
+          ctx.session.createPool.buyerInfos[1] = {
+            id: 1,
+            amount: Number(text),
+            privateKey: '',
+          };
+        }
         break;
       case Route.POOL_BUYER_2_PRIVATE_KEY:
-        ctx.session.createPool.buyerInfos[1].buyerAuthority = text;
+        if (ctx.session.createPool.buyerInfos[1]) {
+          ctx.session.createPool.buyerInfos[1].privateKey = text;
+        } else {
+          ctx.session.createPool.buyerInfos[1] = {
+            id: 1,
+            amount: 0,
+            privateKey: text,
+          };
+        }
         break;
       case Route.POOL_BUYER_3_SOL:
-        ctx.session.createPool.buyerInfos[2].buyAmount = Number(text);
+        if (ctx.session.createPool.buyerInfos[2]) {
+          ctx.session.createPool.buyerInfos[2].amount = Number(text);
+        } else {
+          ctx.session.createPool.buyerInfos[2] = {
+            id: 1,
+            amount: Number(text),
+            privateKey: '',
+          };
+        }
         break;
       case Route.POOL_BUYER_3_PRIVATE_KEY:
-        ctx.session.createPool.buyerInfos[2].buyerAuthority = text;
+        if (ctx.session.createPool.buyerInfos[2]) {
+          ctx.session.createPool.buyerInfos[2].privateKey = text;
+        } else {
+          ctx.session.createPool.buyerInfos[2] = {
+            id: 1,
+            amount: 0,
+            privateKey: text,
+          };
+        }
         break;
       default:
         break;
@@ -382,7 +437,7 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
   } catch (err: any) {
     console.log(err);
   } finally {
-    // ctx.session.step = 'IDLE';
+    ctx.session.step = 'IDLE';
 
     try {
       await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
@@ -390,26 +445,42 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
         ctx.chat!.id,
         ctx.update.message!.reply_to_message!.message_id,
       );
-    } catch (err) {}
 
-    // const walletsMessage = await generateWalletsMessage(ctx);
-    // await ctx.api.editMessageText(
-    //   ctx.chat!.id,
-    //   ctx.session.topMsgId,
-    //   walletsMessage,
-    //   {
-    //     parse_mode: 'HTML',
-    //     reply_markup: createTokenMenu,
-    //   },
-    // );
+      debug('ctx.session.topMsgId', ctx.session.topMsgId);
+      debug('ctx.session.createPool.msgId', ctx.session.createPool.msgId);
+
+      const message = await generateCreatePoolMessage(ctx);
+
+      if (ctx.session.topMsgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.topMsgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: createPoolMenu,
+          },
+        );
+      }
+
+      if (ctx.session.createPool.msgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.createPool.msgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: createPoolMenu,
+          },
+        );
+      }
+    } catch (err) {}
   }
 }
 
-async function fireCreateMarketCbQH(ctx: MainContext) {
+async function fireCreatePoolCbQH(ctx: MainContext) {
   let processMessageId = 0;
   try {
-    // console.log(ctx.chat!.id);
-
     const marketInfo = await serviceOpenmarket.getOpenmarket(
       ctx.chat!.id,
       ctx.session.createPool.marketId,
@@ -434,14 +505,24 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
       return;
     }
 
-    const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
-    if (!botSettings) {
-      await ctx.reply('🔴 Please enter Bot settings.');
+    if (!ctx.session.createPool.tokenLiquidity) {
+      await ctx.reply('🔴 Please enter Token Liquidity.');
       return;
     }
 
-    if (!ctx.session.createPool.tokenLiquidity) {
-      await ctx.reply('🔴 Failed generate Bundle data.');
+    if (!ctx.session.createPool.amountOfPercentage) {
+      await ctx.reply('🔴 Please enter Amount Percentage.');
+      return;
+    }
+
+    if (ctx.session.createPool.buyerInfos.length === 0) {
+      await ctx.reply('🔴 Please enter Buyers Information.');
+      return;
+    }
+
+    const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
+    if (!botSettings) {
+      await ctx.reply('🔴 Please enter Bot settings.');
       return;
     }
 
@@ -477,81 +558,28 @@ async function fireCreateMarketCbQH(ctx: MainContext) {
         quoteliquidityAmount: ctx.session.createPool.tokenLiquidity,
         bundleTip: bundleTip,
         deployWallet: deployWallet.privateKey,
-        buyerCount: 3,
-        buyers: [
-          {
-            id: ctx.session.createPool.buyerInfos[0].id,
-            amount: ctx.session.createPool.buyerInfos[0].buyAmount,
-            privateKey: ctx.session.createPool.buyerInfos[0].buyerAuthority,
-          },
-          {
-            id: ctx.session.createPool.buyerInfos[1].id,
-            amount: ctx.session.createPool.buyerInfos[1].buyAmount,
-            privateKey: ctx.session.createPool.buyerInfos[1].buyerAuthority,
-          },
-          {
-            id: ctx.session.createPool.buyerInfos[2].id,
-            amount: ctx.session.createPool.buyerInfos[2].buyAmount,
-            privateKey: ctx.session.createPool.buyerInfos[2].buyerAuthority,
-          },
-        ],
+        buyerCount: ctx.session.createPool.buyerInfos.length,
+        buyers: ctx.session.createPool.buyerInfos,
         blockEngin: bolckEngines[ctx.session.createPool.blockEngine],
       },
     };
 
-    // const inputData: BundlerInputData = {
-    //   createTokenInfo: {
-    //     address: marketInfo!.baseMint, // '9uadnK9nZ9MoXuYP43jH4mEjdgy1F4qXnFHRRWVmWQbP',
-    //     supply: supply,
-    //   },
-    //   marketSettings: {
-    //     marketId: ctx.session.createPool.marketId,
-    //     quoteTokenAddress: quoteMint,
-    //     baseLogSize: 1,
-    //     tickSize: 1,
-    //   },
-    //   bundleSetup: {
-    //     baseliquidityAmount: supply,
-    //     quoteliquidityAmount: 0.01,
-    //     bundleTip: 1500000,
-
-    //     deployWallet: deployWallet.privateKey,
-    //     // '3LBufA58uyUpqP4noSijhGtadMG6TZoiBFKP5UTD1rivFZgtcbbRaPnFTSf1YqPCkoyJeSaZNPYkSkhRmkHPJ18U',
-    //     buyerCount: 3,
-    //     buyers: [
-    //       {
-    //         id: 0,
-    //         amount: 0.001,
-    //         privateKey:
-    //           '2Dg2VAWQ2mZ1vZoYPnq8yiM5MD9eZq2hPwj5GDJy5GD8yQQAieSjd9RGrrDprdnjXsJGYNoeyY7EozssMr2yDvPt',
-    //       },
-    //       {
-    //         id: 1,
-    //         amount: 0.001,
-    //         privateKey:
-    //           '4cCMpMirkfwBy44W4PgGFM2ocDgVCocZzuCAZNMU6axbuHo7p4khZ12rdFsooFWtwzFARerCwR5kbjdEMuNeYpvN',
-    //       },
-    //       {
-    //         id: 2,
-    //         amount: 0.006,
-    //         privateKey:
-    //           '5WZWJSSndqLbWS8XoNGLKidY3eTKSjUcwsmXSqPRXA2VEm3DvFm4gfYs5Yqzh7r1hZ6AirHiKkvrcU2Fjo6sSocb',
-    //       },
-    //     ],
-    //     blockEngin: 'amsterdam.mainnet.block-engine.jito.wtf',
-    //   },
-    // };
+    // console.log(inputData);
 
     const doBundle = await serviceLiquidityPool.launchLiquidityPool(
       inputData,
       solTxnTip,
     );
 
-    console.log(doBundle);
+    console.log('Create Pool Result:', doBundle);
 
     if (!doBundle) {
-      throw '';
-    } else if (doBundle.bundleRes && doBundle.bundleRes.bundleId) {
+      throw 'Bundle Failed.';
+    } else if (
+      doBundle.poolId &&
+      doBundle.bundleRes
+      // doBundle.bundleRes.bundleId
+    ) {
       const message = `
       🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${doBundle.bundleRes.bundleId}' target='_blank'>here</a>.
          Pool ID: ${doBundle.poolId}`;
