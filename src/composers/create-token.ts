@@ -9,6 +9,7 @@ import { getPrimaryWallet } from '@root/services/wallet-service';
 import { CreateTokenInput } from '@root/web3';
 import { serviceSettings, serviceToken } from '@root/services';
 import { command } from './constants';
+import { generateCreateTokenMessage } from './helpers';
 
 export enum Route {
   TOKEN_NAME = 'CREATE_TOKEN|TOKEN_NAME',
@@ -75,21 +76,25 @@ const createTokenMenu = new Menu<MainContext>('create-token-menu')
     },
   )
   .row()
-  .text((ctx) => ctx.t('label-mint-token'), fireMintTokenHandler)
-  .row()
-  // .text('🔙  Close', doneCbQH);
-  .back('🔙  Close', async (ctx) => {
-    const welcomeMessage = await generateWelcomeMessage(ctx);
-    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
-  });
+  .text((ctx) => ctx.t('label-mint-token'), fireMintTokenHandler);
+// .row()
+// .text('🔙  Close', doneCbQH);
+// .back('🔙  Close', async (ctx) => {
+//   const welcomeMessage = await generateWelcomeMessage(ctx);
+//   await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+// });
 
 const customDecimalsMenu = new Menu<MainContext>('custom-decimals-menu')
   .back('6 Decimals', async (ctx) => {
     ctx.session.createToken.decimals = 6;
+    const message = await generateCreateTokenMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .back('9 Decimals', async (ctx) => {
     ctx.session.createToken.decimals = 9;
+    const message = await generateCreateTokenMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .text((ctx) => ctx.t('label-custom-decimals'), inputDecimalsCbQH)
@@ -99,10 +104,14 @@ const customDecimalsMenu = new Menu<MainContext>('custom-decimals-menu')
 const customSupplyMenu = new Menu<MainContext>('custom-supply-menu')
   .back('100 Million', async (ctx) => {
     ctx.session.createToken.supply = 100000000;
+    const message = await generateCreateTokenMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .back('1 Billion', async (ctx) => {
     ctx.session.createToken.supply = 1000000000;
+    const message = await generateCreateTokenMessage(ctx);
+    ctx.editMessageText(message);
   })
   .row()
   .text((ctx) => ctx.t('label-custom-supply'), inputSupplyCbQH)
@@ -132,11 +141,14 @@ bot.use(router);
 export { bot, createTokenMenu };
 
 export async function createTokenCommandHandler(ctx: MainContext) {
-  const message = ctx.t('create-token-title');
-  await ctx.reply(message, {
+  ctx.session.topMsgId = 0;
+  const message = await generateCreateTokenMessage(ctx);
+  const ret = await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: createTokenMenu,
   });
+
+  ctx.session.createToken.msgId = ret.message_id;
 }
 
 async function inputNameCbQH(ctx: MainContext) {
@@ -311,7 +323,7 @@ async function fireTokenInfomationRouteHandler(ctx: MainContext) {
   } catch (err: any) {
     console.log(err);
   } finally {
-    // ctx.session.step = 'IDLE';
+    ctx.session.step = 'IDLE';
 
     try {
       await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
@@ -319,18 +331,36 @@ async function fireTokenInfomationRouteHandler(ctx: MainContext) {
         ctx.chat!.id,
         ctx.update.message!.reply_to_message!.message_id,
       );
-    } catch (err) {}
 
-    // const walletsMessage = await generateWalletsMessage(ctx);
-    // await ctx.api.editMessageText(
-    //   ctx.chat!.id,
-    //   ctx.session.topMsgId,
-    //   walletsMessage,
-    //   {
-    //     parse_mode: 'HTML',
-    //     reply_markup: createTokenMenu,
-    //   },
-    // );
+      debug('ctx.session.topMsgId', ctx.session.topMsgId);
+      debug('ctx.session.createToken.msgId', ctx.session.createToken.msgId);
+
+      const message = await generateCreateTokenMessage(ctx);
+
+      if (ctx.session.topMsgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.topMsgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: createTokenMenu,
+          },
+        );
+      }
+
+      if (ctx.session.createToken.msgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.createToken.msgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: createTokenMenu,
+          },
+        );
+      }
+    } catch (err) {}
   }
 }
 
