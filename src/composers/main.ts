@@ -11,7 +11,15 @@ import { createMarketMenu } from './create-market';
 import { createPoolMenu } from './create-pool';
 import { removeLiquidityMenu } from './remove_liquidity';
 import { burnLiquidityMenu } from './burn-liquidity';
-import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
+import {
+  generateWelcomeMessage,
+  generateWalletsMessage,
+  generateCreateTokenMessage,
+  generateCreateMarketMessage,
+  generateCreatePoolMessage,
+  generateBurnTokensMessage,
+  generateRemoveLPMessage,
+} from './helpers';
 
 const debug = Debug(`bot:main`);
 
@@ -22,16 +30,18 @@ const mainMenu = new Menu<MainContext>('Welcome')
     (ctx) => ctx.t('label-create-token'),
     'create-token-menu',
     async (ctx) => {
-      const tokenMessage = ctx.t('create-token-title');
-      ctx.editMessageText(tokenMessage, { parse_mode: 'HTML' });
+      ctx.session.createToken.msgId = 0;
+      const message = await generateCreateTokenMessage(ctx);
+      ctx.editMessageText(message, { parse_mode: 'HTML' });
     },
   )
   .submenu(
     (ctx) => ctx.t('label-create-market'),
     'create-market-menu',
     async (ctx) => {
-      const tokenMessage = ctx.t('create-market-title');
-      ctx.editMessageText(tokenMessage, { parse_mode: 'HTML' });
+      ctx.session.createMarket.msgId = 0;
+      const message = await generateCreateMarketMessage(ctx);
+      ctx.editMessageText(message, { parse_mode: 'HTML' });
     },
   )
   .row()
@@ -39,8 +49,9 @@ const mainMenu = new Menu<MainContext>('Welcome')
     (ctx) => ctx.t('label-add-liquidity'),
     'create-pool-menu',
     async (ctx) => {
-      const tokenMessage = ctx.t('create-pool-title');
-      ctx.editMessageText(tokenMessage, { parse_mode: 'HTML' });
+      ctx.session.createPool.msgId = 0;
+      const message = await generateCreatePoolMessage(ctx);
+      ctx.editMessageText(message, { parse_mode: 'HTML' });
     },
   )
   .row()
@@ -48,7 +59,8 @@ const mainMenu = new Menu<MainContext>('Welcome')
     (ctx) => ctx.t('label-remove-lp'),
     'remove-liquidity-menu',
     async (ctx) => {
-      const message = ctx.t('remove-liquidity-title');
+      ctx.session.removeLiquidity.msgId = 0;
+      const message = await generateRemoveLPMessage(ctx);
       ctx.editMessageText(message, { parse_mode: 'HTML' });
     },
   )
@@ -56,7 +68,8 @@ const mainMenu = new Menu<MainContext>('Welcome')
     (ctx) => ctx.t('label-burn-tokens'),
     'burn-liquidity-menu',
     async (ctx) => {
-      const message = ctx.t('burn-tokens-title');
+      ctx.session.burnLiquidity.msgId = 0;
+      const message = await generateBurnTokensMessage(ctx);
       ctx.editMessageText(message, { parse_mode: 'HTML' });
     },
   )

@@ -81,20 +81,81 @@ const generateWalletsMessage = async (ctx: MainContext) => {
   return welcomeMessage;
 };
 
-const createMainKeyboard = (ctx: MainContext) => {
-  return new InlineKeyboard()
-    .text(ctx.t('label-create-market'))
-    .row()
-    .text(ctx.t('label-add-liquidity'))
-    .row()
-    .text(ctx.t('label-remove-lp'))
-    .text(ctx.t('label-burn-tokens'))
-    .row()
-    .text(ctx.t('label-wallet'))
-    .text(ctx.t('label-bot-settings'))
-    .row()
-    .text(ctx.t('label-help'));
-  // .resized()
+const generateCreateTokenMessage = async (ctx: MainContext) => {
+  let message: string = ctx.t('create-token-title', {
+    name: ctx.session.createToken.name,
+    symbol: ctx.session.createToken.symbol,
+    decimals: ctx.session.createToken.decimals,
+    supply: ctx.session.createToken.supply,
+    image: ctx.session.createToken.image,
+    description: ctx.session.createToken.description,
+    website: ctx.session.createToken.socials.website,
+    telegram: ctx.session.createToken.socials.telegram,
+    twitter: ctx.session.createToken.socials.twitter,
+  });
+
+  return message;
+};
+
+const generateCreateMarketMessage = async (ctx: MainContext) => {
+  let message: string = ctx.t('create-market-title', {
+    baseToken: ctx.session.createMarket.baseMint,
+    quoteToken: ctx.session.createMarket.quoteMint,
+    minBuy: ctx.session.createMarket.baseLogSize,
+    tickSize: toPlainString(ctx.session.createMarket.tickSize.toString()),
+    eventLength: ctx.session.createMarket.eventLength,
+    requestLength: ctx.session.createMarket.requestLength,
+    orderbookLength: ctx.session.createMarket.orderbookLength,
+  });
+
+  return message;
+};
+
+const generateCreatePoolMessage = async (ctx: MainContext) => {
+  let buyersInfo = '';
+  for (const buyer of ctx.session.createPool.buyerInfos) {
+    if (buyersInfo === '') {
+      buyersInfo += `${buyer.privateKey || ''} : ${buyer.amount || '0'} SOL`;
+    } else {
+      buyersInfo += `\n\n${buyer.privateKey || ''} : ${buyer.amount || '0'} SOL`;
+    }
+  }
+  let message: string = ctx.t('create-pool-title', {
+    marketId: ctx.session.createPool.marketId,
+    tokenLiquidity: ctx.session.createPool.tokenLiquidity,
+    amountPercent: ctx.session.createPool.amountOfPercentage,
+    buyers: buyersInfo,
+  });
+
+  return message;
+};
+
+const generateBurnTokensMessage = async (ctx: MainContext) => {
+  let message: string = ctx.t('burn-tokens-title', {
+    tokenAddress: ctx.session.burnLiquidity.tokenAddress,
+    amount: ctx.session.burnLiquidity.burnAmount,
+  });
+
+  return message;
+};
+
+const generateRemoveLPMessage = async (ctx: MainContext) => {
+  let message: string = ctx.t('remove-liquidity-title', {
+    tokenAddress: ctx.session.removeLiquidity.tokenAddress,
+  });
+
+  return message;
+};
+
+const toPlainString = (num: string): string => {
+  return ('' + +num).replace(
+    /(-?)(\d*)\.?(\d*)e([+-]\d+)/,
+    function (a, b, c, d, e) {
+      return e < 0
+        ? b + '0.' + Array(1 - +e - c.length).join('0') + c + d
+        : b + c + d + Array(+e - d.length + 1).join('0');
+    },
+  );
 };
 
 const getSolPrice = async () => {
@@ -111,4 +172,12 @@ const getSolPrice = async () => {
   }
 };
 
-export { generateWelcomeMessage, generateWalletsMessage };
+export {
+  generateWelcomeMessage,
+  generateWalletsMessage,
+  generateCreateTokenMessage,
+  generateCreateMarketMessage,
+  generateCreatePoolMessage,
+  generateBurnTokensMessage,
+  generateRemoveLPMessage,
+};
