@@ -4,7 +4,7 @@ import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { generateWelcomeMessage } from './helpers';
+import { generateRemoveLPMessage } from './helpers';
 import {
   serviceSettings,
   serviceWallets,
@@ -25,13 +25,13 @@ const router = new Router<MainContext>((ctx) => ctx.session.step);
 const removeLiquidityMenu = new Menu<MainContext>('remove-liquidity-menu')
   .text((ctx) => ctx.t('label-token-address'), inputBaseTokenCbQH)
   .row()
-  .text((ctx) => ctx.t('label-remove-liquidity'), fireRemoveLiquidityCbQH)
-  .row()
-  // .text('🔙  Close', doneCbQH);
-  .back('🔙  Close', async (ctx) => {
-    const welcomeMessage = await generateWelcomeMessage(ctx);
-    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
-  });
+  .text((ctx) => ctx.t('label-remove-liquidity'), fireRemoveLiquidityCbQH);
+// .row()
+// .text('🔙  Close', doneCbQH);
+// .back('🔙  Close', async (ctx) => {
+//   const welcomeMessage = await generateWelcomeMessage(ctx);
+//   await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+// });
 
 bot.use(removeLiquidityMenu);
 
@@ -45,11 +45,13 @@ bot.use(router);
 export { bot, removeLiquidityMenu };
 
 export async function removeLiquidityCommandHandler(ctx: MainContext) {
-  const message = ctx.t('remove-liquidity-title');
-  await ctx.reply(message, {
+  ctx.session.topMsgId = 0;
+  const message = await generateRemoveLPMessage(ctx);
+  const ret = await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: removeLiquidityMenu,
   });
+  ctx.session.removeLiquidity.msgId = ret.message_id;
 }
 
 async function inputBaseTokenCbQH(ctx: MainContext) {
@@ -80,7 +82,7 @@ async function fireRouteHandler(ctx: MainContext) {
   } catch (err: any) {
     console.log(err);
   } finally {
-    // ctx.session.step = 'IDLE';
+    ctx.session.step = 'IDLE';
 
     try {
       await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
@@ -88,18 +90,39 @@ async function fireRouteHandler(ctx: MainContext) {
         ctx.chat!.id,
         ctx.update.message!.reply_to_message!.message_id,
       );
-    } catch (err) {}
 
-    // const walletsMessage = await generateWalletsMessage(ctx);
-    // await ctx.api.editMessageText(
-    //   ctx.chat!.id,
-    //   ctx.session.topMsgId,
-    //   walletsMessage,
-    //   {
-    //     parse_mode: 'HTML',
-    //     reply_markup: createTokenMenu,
-    //   },
-    // );
+      debug('ctx.session.topMsgId', ctx.session.topMsgId);
+      debug(
+        'ctx.session.removeLiquidity.msgId',
+        ctx.session.removeLiquidity.msgId,
+      );
+
+      const message = await generateRemoveLPMessage(ctx);
+
+      if (ctx.session.topMsgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.topMsgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: removeLiquidityMenu,
+          },
+        );
+      }
+
+      if (ctx.session.removeLiquidity.msgId > 0) {
+        await ctx.api.editMessageText(
+          ctx.chat!.id,
+          ctx.session.removeLiquidity.msgId,
+          message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: removeLiquidityMenu,
+          },
+        );
+      }
+    } catch (err) {}
   }
 }
 
@@ -108,14 +131,14 @@ async function fireRemoveLiquidityCbQH(ctx: MainContext) {
   try {
     console.log(ctx.session.removeLiquidity);
 
-    const pool = await serviceLiquidityPool.getLiquidityPool(
-      ctx.chat!.id,
-      ctx.session.removeLiquidity.tokenAddress,
-    );
-    if (!pool) {
-      await ctx.reply('🔴 Cannot find the target pool for Token.');
-      return;
-    }
+    // const pool = await serviceLiquidityPool.getLiquidityPool(
+    //   ctx.chat!.id,
+    //   ctx.session.removeLiquidity.tokenAddress,
+    // );
+    // if (!pool) {
+    //   await ctx.reply('🔴 Cannot find the target pool for Token.');
+    //   return;
+    // }
 
     const primaryWallet = await serviceWallets.getPrimaryWallet(ctx.chat!.id);
     if (!primaryWallet) {
@@ -132,9 +155,9 @@ async function fireRemoveLiquidityCbQH(ctx: MainContext) {
     processMessageId = msg.message_id;
 
     const res = await serviceRemovePool.removeLiquidityPool(
-      primaryWallet.privateKey,
-      ctx.session.removeLiquidity.tokenAddress,
-      pool.poolId,
+      '2SmGbt8u6r6tFGjCfzw86MereuLbXV8v3J4SyKSS8jnz6nssYyRciApJJStcprmyJXsMsVpc391h9vi8VmeC4mYn', // primaryWallet.privateKey,
+      'HjZi2MYqd8N1NpihvJ1g56ZYMCWC3LexSzEbVEwHaXSC', // ctx.session.removeLiquidity.tokenAddress,
+      '8RbHdvzwFrHers8r8s2LPAPeLmU2jyPtCST1wDWj2sQL', // pool.poolId,
       botSettings?.solTxTip || 0.0001,
     );
 
