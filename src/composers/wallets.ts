@@ -49,16 +49,30 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
             await ctx.editMessageText(walletsMessage, { parse_mode: 'HTML' });
           },
         )
-        .text({
-          text: (ctx) => {
-            const publicKey = wallet.publicKey.replace(
-              /(.{6})(.*?)(.{6})$/,
-              '$1...$3',
-            );
+        .text(
+          {
+            text: (ctx) => {
+              const publicKey = wallet.publicKey.replace(
+                /(.{6})(.*?)(.{6})$/,
+                '$1...$3',
+              );
 
-            return publicKey;
+              return publicKey;
+            },
           },
-        })
+          async (ctx: any) => {
+            await ctx.reply(
+              `Wallet Details:
+            <b>Address:</b> ${wallet.publicKey}
+   
+            <b>Private key:</b> ${wallet.privateKey}
+           `,
+              {
+                parse_mode: 'HTML',
+              },
+            );
+          },
+        )
         .text({ text: `${wallet.balance} SOL` })
         .row();
     }
@@ -85,6 +99,17 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
 
       const walletsMessage = await generateWalletsMessage(ctx);
       await ctx.editMessageText(walletsMessage, { parse_mode: 'HTML' });
+
+      const ret = await ctx.reply(
+        `New Wallet:
+         <b>Address:</b> ${publicKey}
+
+         <b>Private key:</b> ${privateKey}
+        `,
+        {
+          parse_mode: 'HTML',
+        },
+      );
     },
   )
   .text((ctx) => ctx.t('label-connect-wallet'), inputWalletPrimaryKeyCbQH)
@@ -92,6 +117,8 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
   .text(
     (ctx) => ctx.t('label-gen-3-wallet'),
     async (ctx: any) => {
+      let addresses = '';
+      let privateKeys = '';
       for (let idx = 0; idx < 3; idx++) {
         const walletKeyPair = Keypair.generate();
         const privateKey = getKeypairFromUint8Array(walletKeyPair.secretKey);
@@ -103,16 +130,32 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
 
         // Save user wallet info to the database
         await createWallet(ctx.chat.id, privateKey, publicKey);
+
+        addresses += publicKey + '\n';
+        privateKeys += privateKey + '\n';
       }
 
       // ctx.menu.update();
       const walletsMessage = await generateWalletsMessage(ctx);
       await ctx.editMessageText(walletsMessage, { parse_mode: 'HTML' });
+
+      const ret = await ctx.reply(
+        `New Wallets:
+         <b>Address:</b> ${addresses}
+
+         <b>Private key:</b> ${privateKeys}
+        `,
+        {
+          parse_mode: 'HTML',
+        },
+      );
     },
   )
   .text(
     (ctx) => ctx.t('label-gen-5-wallet'),
     async (ctx: any) => {
+      let addresses = '';
+      let privateKeys = '';
       for (let idx = 0; idx < 5; idx++) {
         const walletKeyPair = Keypair.generate();
         const privateKey = getKeypairFromUint8Array(walletKeyPair.secretKey);
@@ -124,11 +167,25 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
 
         // Save user wallet info to the database
         await createWallet(ctx.chat.id, privateKey, publicKey);
+
+        addresses += publicKey + '\n';
+        privateKeys += privateKey + '\n';
       }
 
       // ctx.menu.update();
       const walletsMessage = await generateWalletsMessage(ctx);
       await ctx.editMessageText(walletsMessage, { parse_mode: 'HTML' });
+
+      const ret = await ctx.reply(
+        `New Wallets:
+         <b>Address:</b> ${addresses}
+
+         <b>Private key:</b> ${privateKeys}
+        `,
+        {
+          parse_mode: 'HTML',
+        },
+      );
     },
   )
   .row()
