@@ -22,6 +22,7 @@ export interface SessionData {
   solPrice: number;
   priceUpdated: number;
   createToken: {
+    msgId: number;
     name: string;
     symbol: string;
     supply: number;
@@ -39,6 +40,7 @@ export interface SessionData {
     revokeFreeze: boolean;
   };
   createMarket: {
+    msgId: number;
     baseMint: string;
     quoteMint: string;
     baseLogSize: number;
@@ -48,6 +50,7 @@ export interface SessionData {
     orderbookLength: number;
   };
   createPool: {
+    msgId: number;
     marketId: string;
     baseToken: string;
     quoteToken: string;
@@ -55,13 +58,15 @@ export interface SessionData {
     tickSize: number;
     tokenLiquidity: number;
     amountOfPercentage: number;
-    buyerInfos: { id: number; buyAmount: number; buyerAuthority: string }[];
+    buyerInfos: { id: number; amount: number; privateKey: string }[];
     blockEngine: string;
   };
   removeLiquidity: {
+    msgId: number;
     tokenAddress: string;
   };
   burnLiquidity: {
+    msgId: number;
     tokenAddress: string;
     burnAmount: number;
   };
@@ -74,12 +79,12 @@ export function createInitialSessionData() {
     solPrice: 0,
     priceUpdated: 0,
     createToken: {
-      name: 'My DOG 5',
-      symbol: 'MDG',
+      msgId: 0,
+      name: '',
+      symbol: '',
       supply: 100_000_000,
       decimals: 6,
-      image:
-        'https://ipfs.io/ipfs/QmdM9RMvchMxxQAdNmg6Ewq356wRcnk2q3hP9VtYcYHQwk',
+      image: '',
       description: '',
       socials: {
         website: '',
@@ -92,35 +97,42 @@ export function createInitialSessionData() {
       revokeFreeze: false,
     },
     createMarket: {
+      msgId: 0,
       baseMint: '',
       quoteMint: 'SOL',
-      baseLogSize: 1,
-      tickSize: 1,
+      baseLogSize: 100,
+      tickSize: 0.0000001,
       eventLength: 128,
       requestLength: 63,
       orderbookLength: 201,
     },
     createPool: {
+      msgId: 0,
       marketId: '',
       baseToken: '',
       quoteToken: 'SOL',
       baseLogSize: 0,
       tickSize: 0,
-      tokenLiquidity: 0,
-      amountOfPercentage: 0,
+      tokenLiquidity: 0.01,
+      amountOfPercentage: 30,
       buyerInfos: [
-        { id: 0, buyAmount: 0, buyerAuthority: '' },
-        { id: 1, buyAmount: 0, buyerAuthority: '' },
-        { id: 2, buyAmount: 0, buyerAuthority: '' },
+        // {
+        //   id: 0,
+        //   amount: 0.001,
+        //   privateKey:
+        //     '2Dg2VAWQ2mZ1vZoYPnq8yiM5MD9eZq2hPwj5GDJy5GD8yQQAieSjd9RGrrDprdnjXsJGYNoeyY7EozssMr2yDvPt',
+        // },
       ],
       blockEngine: 'Amsterdam',
     },
     removeLiquidity: {
+      msgId: 0,
       tokenAddress: '',
     },
     burnLiquidity: {
+      msgId: 0,
       tokenAddress: '',
-      burnAmount: 30,
+      burnAmount: 100,
     },
   };
 }
