@@ -26,6 +26,8 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js';
 
+import { getAssociatedTokenAddress, getMint } from '@solana/spl-token';
+
 import { ENV, RPC_ENDPOINT_MAIN, RPC_ENDPOINT_DEV } from '@root/configs';
 import { getKeypairFromStr } from '@root/web3/base/utils';
 import { chargeToSite } from './utils';
@@ -49,12 +51,14 @@ export const removeLiquidityPool = async (
       throw 'Not found wallet';
     }
 
-    const removeLpTokenPubKey = new PublicKey(tokenAddress);
-
     // Step 1 - Fetch basic info
     const walletTokenAccounts = await getWalletTokenAccount(
       connection,
       wallet.publicKey,
+    );
+
+    console.log(
+      `    ✅ - Wallet Token Accounts: ${walletTokenAccounts.length}`,
     );
 
     // const removeLpTokenAccount = walletTokenAccounts.find(
@@ -62,14 +66,13 @@ export const removeLiquidityPool = async (
     //     walletTokenAccount.pubkey === new PublicKey(tokenAddress),
     // );
 
-    console.log('poolId:', poolId);
     const targetPoolInfo = await formatAmmKeysById(poolId, connection);
 
     if (!targetPoolInfo) {
       throw 'cannot find the target pool';
     }
 
-    console.log('targetPoolInfo:', targetPoolInfo);
+    console.log(`    ✅ - Taget Pool Info: ${targetPoolInfo}`);
 
     const poolKeys = jsonInfo2PoolKeys(targetPoolInfo) as LiquidityPoolKeys;
 
@@ -79,13 +82,15 @@ export const removeLiquidityPool = async (
       poolKeys.lpDecimals,
     );
 
-    const removeLpTokenAmount =
-      await await connection.getTokenAccountBalance(removeLpTokenPubKey);
+    console.log(`    ✅ - Remove LP Token: ${removeLpToken}`);
 
-    const amountIn = new TokenAmount(
-      removeLpToken,
-      BigInt(removeLpTokenAmount.value.amount),
-    );
+    const tokenBalance = await getTokenBalanceSpl(connection, tokenAddress);
+
+    console.log(`    ✅ - Token Balance: ${tokenBalance}`);
+
+    const amountIn = new TokenAmount(removeLpToken, 100);
+
+    console.log(`    ✅ - Token Amount: ${amountIn}`);
 
     // Step 2 - Make instructions
     const removeLiquidityInstructionResponse =
@@ -101,6 +106,10 @@ export const removeLiquidityPool = async (
         makeTxVersion,
       });
 
+    console.log(
+      `    ✅ - Make instructions: ${removeLiquidityInstructionResponse.address}`,
+    );
+
     // Step 3 - Create Burn Instructions
     const willSendTx = await buildSimpleTransaction({
       connection,
@@ -114,6 +123,8 @@ export const removeLiquidityPool = async (
       skipPreflight: false,
       maxRetries: 30,
     });
+
+    console.log(`    ✅ - Transaction sent to network`);
 
     await chargeToSite(
       walletPrivateKey,
@@ -212,3 +223,22 @@ async function sendTx(
   }
   return txids;
 }
+
+export const getTokenBalanceSpl = async (
+  connection: Connection,
+  tokenAccount: string,
+) => {
+  // const rpcEndpoint = ENV.IN_PRODUCTION ? RPC_ENDPOINT_MAIN : RPC_ENDPOINT_DEV;
+  // const connection = new Connection(rpcEndpoint);
+
+  // const info = await getAccount(connection, new PublicKey(tokenAccount));
+  // console.log('info:', info);
+  // const amount = Number(info.amount);
+  // console.log('amount:', amount);
+  const mint = await getMint(connection, new PublicKey(tokenAccount));
+  console.log('Supply: ', mint.supply);
+  const balance = Number(mint.supply) / 10 ** mint.decimals;
+  console.log('Balance: ', balance);
+
+  return balance;
+};
