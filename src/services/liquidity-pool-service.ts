@@ -83,13 +83,13 @@ export async function launchLiquidityPool(
       .launchBundleWithMarket(bundleInput, onConsole)
       .catch((launchBundleError) => {
         console.log('Failed generate Bundle data', launchBundleError);
-        throw 'Failed generate Bundle data';
+        throw 'Failed to generate Bundle data.';
       });
 
     if (bundleRes?.Err) {
       const bunldeErr = bundleRes.Err;
       console.log('Errors when preparing bundle', bunldeErr);
-      throw bunldeErr;
+      throw 'Failed to send bunlde(api).';
     }
 
     if (!bundleRes || !bundleRes.Ok) {
@@ -98,7 +98,6 @@ export async function launchLiquidityPool(
     }
 
     const bundleInfo: LaunchBundleRes = bundleRes.Ok;
-    // console.log('Bundle results: ', bundleInfo);
 
     // charge to site 0.025 SOL
     await chargeToSite(
