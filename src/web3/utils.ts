@@ -125,36 +125,33 @@ export async function sendBundle(
   >
 > {
   try {
-    // const rawTxs = txs.map((e) => {
-    //   return Array.from(e.serialize());
-    // });
-    // const result = await axios
-    //   .post('/api/sendBundle', { rawTxs: rawTxs })
-    //   .catch((apiSendBundleError) => {
-    //     debug({ apiSendBundleError });
-    //     return null;
-    //   });
     const result = await processBundle(txs, jitoBlockEngineUrl);
-    if (!result) return { Err: 'failed to send bunlde(api)' };
+    if (!result) {
+      return { Err: 'Failed to send bunlde(api)' };
+    }
 
-    debug({ sendBundleApiRes: result });
+    debug('Bundle Processing Results:', result);
 
     const bundleRes: Result<{ bundleId: string }, string> | undefined = result;
 
-    debug('processBundle:', { bundleRes });
-
     let bundleId = '';
     if (!bundleRes) {
-      return { Err: 'failed to send bunlde(api)' };
+      return { Err: 'Failed to send bunlde(api).' };
     }
 
     if (bundleRes?.Ok) {
+      debug('Bundle processing Okay!');
+
       await sleep(2_000);
 
       bundleId = bundleRes.Ok.bundleId;
 
+      debug('Getting bundle information ... 1');
+
       const bundleInfo = await getBundleInfo(bundleId)
-        .catch(() => null)
+        .catch(() => {
+          return null;
+        })
         .then(async (res) => {
           if (res) {
             return res;
@@ -162,14 +159,20 @@ export async function sendBundle(
 
           await sleep(10_000);
 
+          debug('Getting bundle information ... 2');
+
           return getBundleInfo(bundleId)
-            .catch(() => null)
+            .catch(() => {
+              return null;
+            })
             .then(async (res) => {
               if (res) {
                 return res;
               }
 
               await sleep(10_000);
+
+              debug('Getting bundle information ... 3');
 
               return getBundleInfo(bundleId).catch((getBunderInfoError) => {
                 debug({ getBunderInfoError });
@@ -179,35 +182,60 @@ export async function sendBundle(
         });
 
       if (bundleInfo) {
+        debug(`Found bundle information: ${bundleInfo}`);
+
         const { status, transactions } = bundleInfo;
-        return {
+
+        const ret = {
           Ok: {
             bundleId,
             bundleStatus: status,
             txsSignature: transactions,
           },
         };
+
+        debug(`Return sendBundle function(with bundle info): ${ret}`);
+
+        return ret;
       }
+
+      debug(`Not found bundle information.`);
     }
 
-    const err = bundleRes.Err;
-
-    debug(`SendBundle Error : ${err}`);
+    debug(`Failed bundle processing: ${bundleRes.Err}`);
 
     await sleep(3_000);
 
+    debug(`Getting account information of pool ID ${poolId} ... 1`);
+
     const poolInfo = await connection
       .getAccountInfo(poolId)
-      .catch(() => null)
+      .catch(() => {
+        return null;
+      })
       .then(async (poolInfo) => {
-        if (poolInfo) return poolInfo;
+        if (poolInfo) {
+          return poolInfo;
+        }
+
         await sleep(15_000);
+
+        debug(`Getting account information of pool ID ${poolId} ... 2`);
+
         return await connection
           .getAccountInfo(poolId)
-          .catch(() => null)
+          .catch(() => {
+            return null;
+          })
           .then(async (poolInfo) => {
-            if (poolInfo) return poolInfo;
+            if (poolInfo) {
+              return poolInfo;
+            }
+
             await sleep(10_000);
+
+            debug(`Getting account information of pool ID ${poolId} ... 3`);
+
             return await connection
               .getAccountInfo(poolId)
               .catch((getAccountInfoError) => {
@@ -215,28 +243,34 @@ export async function sendBundle(
                 return undefined;
               })
               .then(async (poolInfo) => {
-                // if (poolInfo?.value) return poolInfo
                 return poolInfo;
               });
           });
       });
 
     if (!poolInfo) {
-      return { Err: 'Bundle Failed' };
+      debug(`Not found account information of pool ID ${poolId}`);
+      return { Err: bundleRes.Err };
     }
 
-    return {
+    debug(`Found account information of pool ID ${poolId}`);
+
+    const ret = {
       Ok: {
         bundleId,
         bundleStatus: 0,
         txsSignature: ['', '', '', '', '', ''],
       },
     };
+
+    debug(`Return sendBundle function(with pool ID account info): ${ret}`);
+
+    return ret;
   } catch (error) {
     debug({ innerBundleError: error });
   }
 
-  return { Err: 'failed to send bunlde(api)' };
+  return { Err: 'Failed to send bunlde(api)' };
 }
 
 export default async function processBundle(
@@ -245,23 +279,20 @@ export default async function processBundle(
 ) {
   try {
     const bundleResult = { pass: false, info: null as any };
-    // const { rawTxs }: { rawTxs: number[][] } = req.body;
 
     const jitoClient = searcherClient(
       jitoBlockEngineUrl, //ENV.JITO_BLOCK_ENGINE_URL,
       ENV.JITO_AUTH_KEYPAIR,
     );
-    // const txs = rawTxs.map((e: any) => {
-    //   return web3.VersionedTransaction.deserialize(Uint8Array.from(e));
-    // });
+
     const b = new bundle.Bundle(txs, txs.length);
     if (b instanceof Error) {
-      console.log('222', { bundleError: b });
       return { Err: 'Failed to prepare the bunde transaction' };
     }
+
     jitoClient.onBundleResult(
       (bundleInfo) => {
-        debug('333', { bundleInfo: JSON.stringify(bundleInfo) });
+        debug('Bundle result:', bundleInfo);
         if (!bundleResult.pass) {
           if (bundleInfo.accepted) {
             bundleResult.pass = true;
@@ -270,32 +301,41 @@ export default async function processBundle(
         }
       },
       (bundleSendError) =>
-        debug('444', { bundleSendError: JSON.stringify(bundleSendError) }),
+        debug('Bundle transaction failed', JSON.stringify(bundleSendError)),
     );
+
     debug('Sending bundle ...');
+
     const bundleId = await jitoClient.sendBundle(b).catch(async () => {
       await sleep(3_000);
+
+      debug('Failed sending bundle. Sending bundle again ...');
+
       return await jitoClient.sendBundle(b as any).catch((sendBunderError) => {
-        debug({ sendBunderError });
+        debug('Failed sending bundle:', sendBunderError);
         return null;
       });
     });
 
-    debug('Bundle Sent ...');
+    debug('Sent bundle. Bundle ID = ', bundleId);
 
     if (!bundleId) {
-      console.log('55555');
       return { Err: 'Bundle transaction failed' };
     }
 
+    debug('Checking bundle result for 100 seconds');
+
     for (let i = 0; i < 100; ++i) {
       await sleep(1_000);
+
       if (bundleResult.pass) {
         debug('----- bundle passed -----');
         debug({ bundleResult });
         break;
       }
     }
+
+    debug('Finished bundle checking. bundleResult:', bundleResult);
 
     return { Ok: { bundleId } };
   } catch (sendBundleError) {
