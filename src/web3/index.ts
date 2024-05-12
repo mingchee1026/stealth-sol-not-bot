@@ -1303,7 +1303,7 @@ export class Connectivity {
       if (!createMarketRecentBlockhash)
         return { Err: 'Web3BundleError.BUNDLER_FAILED_TO_PREPARE' };
       const createMarketTxMsg = new web3.TransactionMessage({
-        instructions: [...createMarketInfoRes.marketInstructions],
+        instructions: [incTxFeeIx, ...createMarketInfoRes.marketInstructions],
         payerKey: user,
         recentBlockhash: createMarketRecentBlockhash,
       }).compileToV0Message([lutsInfo]);
@@ -1404,6 +1404,7 @@ export class Connectivity {
         onConsole('failed to get poolkeys from cache');
         return { Err: Web3BundleError.BUNDLER_BUY_TX_SETUP_FAILED };
       }
+
       const poolInfo = {
         baseDecimals: poolKeys.baseDecimals,
         quoteDecimals: poolKeys.quoteDecimals,
@@ -1414,7 +1415,9 @@ export class Connectivity {
         startTime: null as any,
         status: null as any,
       };
+
       const buyersInfo = bundleSetup.buyers;
+
       const buysTxInfo = await this.bundleGetBuysIxsInfo({
         baseMint,
         quoteMint,
@@ -1429,6 +1432,7 @@ export class Connectivity {
           debug({ bundleGetBuysIxsInfo });
           return null;
         });
+
       if (!buysTxInfo)
         return { Err: Web3BundleError.BUNDLER_BUY_TX_SETUP_FAILED };
 
@@ -1466,27 +1470,34 @@ export class Connectivity {
       debug('create pool tx');
 
       const createPoolBlockhash = await getBlockhash(this.connection);
-      if (!createPoolBlockhash)
+      if (!createPoolBlockhash) {
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      }
+
       const createPoolTxMsg = new web3.TransactionMessage({
         instructions: createPoolTxInfo.ixs,
         payerKey: user,
         recentBlockhash: createPoolBlockhash,
       }).compileToV0Message();
+
       const _createPoolTx = new web3.VersionedTransaction(createPoolTxMsg);
       _createPoolTx.sign(createPoolTxInfo.signers);
 
       // buy txs
       await sleep(400);
+
       debug('create buy txs');
 
       const buyBlockhash = await getBlockhash(this.connection);
-      if (!buyBlockhash)
+      if (!buyBlockhash) {
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      }
+
       const buyTxs: web3.VersionedTransaction[] = [];
       for (let i = 0; i < buysTxInfo.length; ++i) {
         const txInfo = buysTxInfo[i];
         const { buyerAuthority, ixs } = txInfo;
+
         if (i == buysTxInfo.length - 1) {
           const sender = buyerAuthority[buyerAuthority.length - 1].publicKey;
           ixs.push(
@@ -1497,29 +1508,33 @@ export class Connectivity {
             }),
           );
         }
+
         const buyTxMsg = new web3.TransactionMessage({
           instructions: ixs,
           payerKey: buyerAuthority[0].publicKey,
           recentBlockhash: buyBlockhash,
         }).compileToV0Message([lutsInfo]);
+
         const tx = new web3.VersionedTransaction(buyTxMsg);
         tx.sign(buyerAuthority);
+
         buyTxs.push(tx);
       }
+
       const recentBlockhashBundle = await getBlockhash(this.connection);
-      if (!recentBlockhashBundle)
+      if (!recentBlockhashBundle) {
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      }
 
       // get user signature
       const createPoolTx = await this.provider.wallet
         .signTransaction(_createPoolTx)
         .catch(() => null);
-      if (!createPoolTx)
+      if (!createPoolTx) {
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      }
 
       // bundle send
-      debug('send bundle');
-
       let bundleRes: Result<
         {
           bundleId: string;
@@ -1551,35 +1566,30 @@ export class Connectivity {
         });
       }
 
-      debug({ bundleRes });
+      debug(`sendBundle function results: ${bundleRes}`);
 
-      if (bundleRes?.Err) {
-        const err = bundleRes.Err;
-        debug({ sendBundleTestError: err });
-        //TODO: verification failed
-        return { Err: Web3BundleError.BUNDLER_FAILED_TO_SEND };
-      }
       if (!bundleRes || !bundleRes.Ok) {
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_SEND };
       }
-      {
-        const { bundleId, bundleStatus, txsSignature } = bundleRes.Ok;
-        finalRes.marketId = marketId.toBase58();
-        finalRes.poolId = poolId.toBase58();
-        finalRes.bundleRes = {
-          bundleId,
-          bundleStatus,
-          marketCreateTxSignature: '',
-          poolCreateTxSignature: txsSignature[0],
-          buyTxsSignature: txsSignature.splice(1),
+
+      const { bundleId, bundleStatus, txsSignature } = bundleRes.Ok;
+
+      finalRes.marketId = marketId.toBase58();
+      finalRes.poolId = poolId.toBase58();
+      finalRes.bundleRes = {
+        bundleId,
+        bundleStatus,
+        marketCreateTxSignature: '',
+        poolCreateTxSignature: txsSignature[0],
+        buyTxsSignature: txsSignature.splice(1),
+      };
+
+      finalRes.buyersInfo = buyersInfo.map((e) => {
+        return {
+          address: e.buyerAuthority.publicKey.toBase58(),
+          amount: e.buyAmount,
         };
-        finalRes.buyersInfo = buyersInfo.map((e) => {
-          return {
-            address: e.buyerAuthority.publicKey.toBase58(),
-            amount: e.buyAmount,
-          };
-        });
-      }
+      });
 
       onConsole('Confirmed successfully!');
 
@@ -1587,7 +1597,7 @@ export class Connectivity {
     } catch (innerLaunchBundleError) {
       debug({ innerLaunchBundleError });
       // return { Ok: finalRes };
-      throw innerLaunchBundleError;
+      return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
     }
   }
 
