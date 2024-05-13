@@ -12,7 +12,7 @@ command-tutorial = Help / FAQ
 
 # Main menu
 main-welcome =
-  🚀 YellowApe - Solana Token & Liquidity Creator Bot 🤖
+  🚀 Snipeitxyz - Solana Token Creator & Liquidity Sniper 🤖
      <a href="https://t.me/">Telegram</a> | <a href="https://twt.com/">Twitter</a> | <a href="https://my.site.com/">Website</a>
   
      ⬩ SOL: <code class="monospace-text">${$totalDollar}</code>
@@ -35,13 +35,12 @@ wallets-title =
   💰 Wallets ({$countofWallets}) 💳 <em>{$primarySol} SOL</em>, TOTAL <em>{$totalSol}</em> SOL
 
   👇 Select Primary Wallet to use (Only one)
-  ----------------------------------------------------------------------------------------------------
 
 label-create-wallet = Create New Wallet
 label-connect-wallet = Connect Wallet
 label-gen-3-wallet = Generate 3 Wallet
 label-gen-5-wallet = Generate 5 Wallet
-label-transfer-all-sol = Transfer All Sol To Primary Wallet
+label-transfer-all-sol = Send All Sol to One Wallet
 label-reload-list = Reload List
 label-delete-all = Delete All
 
@@ -52,7 +51,8 @@ wallets-enter-privateKey =
 #Settings menu
 settings-title =
   ⚙ Please enter Bot settings
-  ----------------------------------------------------------
+        <b>Solana Transaction Tip</b>: <code>{$solTip} SOL</code>
+        <b>Bundle Tip</b>: <code>{$bundleTip} SOL</code>
 
 label-solana-tx-tip = Set Solana Transaction Tip
 label-bundle-tip = Set Bundle Tip
@@ -64,16 +64,17 @@ settings-enter-bundle-tip = Enter Bundle Tip:
 #Create Token menu
 create-token-title =
   🪙  Enter Token Information to create
-        Name: {$name}
-        Symbol: {$symbol}
-        Decimals: {$decimals}
-        Supply: {$supply}
-        Image URL: {$image}
-        Description: {$description}
-        Website: {$website}
-        Telegram: {$telegram}
-        Twitter: {$twitter}
-  --------------------------------------------------------------------------------------------------
+        <b>Name</b>: <code>{$name}</code>
+        <b>Symbol</b>: <code>{$symbol}</code>
+        <b>Decimals</b>: <code>{$decimals}</code>
+        <b>Supply</b>: <code>{$supply}</code>
+        <b>Image URL</b>: <code>{$image}</code>
+        <b>Description</b>: <code>{$description}</code>
+        <b>Website</b>: <code>{$website}</code>
+        <b>Telegram</b>: <code>{$telegram}</code>
+        <b>Twitter</b>: <code>{$twitter}</code>
+
+       <b>Total Fees</b>: <code>{$totalFees} SOL</code>
 
 label-name = 📛 Name
 label-symbol = 🔡 Symbol
@@ -81,7 +82,7 @@ label-decimals = 🔢 Desimals
 label-custom-decimals = Custom decimals
 label-supply = 🏢 Supply
 label-custom-supply = Custom Supply
-label-image-url = 🖼 Image URL
+label-logo = 🖼 Logo
 label-description = 📝 Description
 label-website = 🌐 Website
 label-telegram = ✈ Telegram
@@ -92,7 +93,9 @@ create-token-enter-name = Enter Token Name:
 create-token-enter-symbol = Enter Token Symbol:
 create-token-enter-decimals = Enter Token Desimals:
 create-token-enter-supply = Enter Token Supply:
-create-token-enter-image-url = Enter Token Image URL:
+create-token-enter-logo = 
+  Upload Token Logo file as a Document:
+  Supported formats: jpg, jpeg, png.
 create-token-enter-description = Enter Token Description:
 create-token-enter-website = Enter Token Website URL:
 create-token-enter-telegram = Enter Token Telegram URL:
@@ -101,23 +104,24 @@ create-token-enter-twitter = Enter Token Twitter URL:
 #Create Market menu
 create-market-title =
   🏪 Enter Market Information to create
-        Base Token: {$baseToken}
-        Quote Token: {$quoteToken}
-        Minimum Buy: {$minBuy}
-        Tick Size: {$tickSize}
-        Event Length: {$eventLength}
-        Request Length: {$requestLength}
-        Orderbook Length: {$orderbookLength}
-  --------------------------------------------------------------------------------------------------
+        <b>Base Token</b>: <code>{$baseToken}</code>
+        <b>Quote Token</b>: <code>{$quoteToken}</code>
+        <b>Minimum Buy</b>: <code>{$minBuy}</code>
+        <b>Tick Size</b>: <code>{$tickSize}</code>
+        <b>Event Length</b>: <code>{$eventLength}</code>
+        <b>Request Length</b>: <code>{$requestLength}</code>
+        <b>Orderbook Length</b>: <code>{$orderbookLength}</code>
+
+       <b>Total Fees</b>: <code>{$totalFees} SOL</code>
 
 label-token-address = 📊 Token Address
 label-base-token = Base Token
 label-quote-token = Quote Token
 label-sol = SOL
-label-usdt = USDT
+label-usdc = USDC
 label-lot-size = 🛒 Minimum Buy (Order Size)
 label-tick-size = 📈 Tick Size (Min Price Cgange)
-label-advance-options = ⚙ Advance Options (Options)
+label-advance-options = Advanced Options
 label-event-length = Event Length
 label-request-length = Request Length
 label-orderbook-length = Orderbook Length
@@ -127,11 +131,12 @@ label-custom = Custom
 #Create Market menu
 create-pool-title =
   💦 Enter Liquidity Pool information to create
-        Market ID: {$marketId}
-        Quote Liquidity: {$tokenLiquidity}
-        Amount Percent: {$amountPercent} %
-        Buyers: {$buyers}
-  --------------------------------------------------------------------------------------------------
+        <b>Market ID</b>: <code>{$marketId}</code>
+        <b>Amount Percent</b>: <code>{$amountPercent} % Tokens</code>
+        <b>Quote Liquidity</b>: <code>{$tokenLiquidity} SOL</code>
+        <b>Sniper & Amount</b>:<code>{$buyers}</code>
+
+       <b>Total Fees</b>: <code>{$totalFees} SOL</code>
 
 label-liquidity-amount = 💦 Quote Token Liquidity
 label-liquidity-percent = 🔢 Amount Percent
@@ -139,17 +144,20 @@ label-liquidity-percent = 🔢 Amount Percent
 #Remove Liquidity menu
 remove-liquidity-title =
   🔻 Remove Liquidity
-        Token Address: {$tokenAddress}
-  --------------------------------------------------------------------------------------------------
+        <b>Token Address</b>: <code>{$tokenAddress}</code>
 
+       <b>Total Fees</b>: <code>{$totalFees} SOL</code>
+
+label-pooi-id = 💦 Enter Pool Id
 label-remove-liquidity = 🔥 Remove Liquidity
 
 #Burn Tokens menu
 burn-tokens-title =
   🔥 Burn Tokens
-        Token Address: {$tokenAddress}
-        Amount Percent: {$amount} %
-  --------------------------------------------------------------------------------------------------
+        <b>Token Address</b>: <code>{$tokenAddress}</code>
+        <b>Amount Percent</b>: <code>{$amount} %</code>
+
+       <b>Total Fees</b>: <code>{$totalFees} SOL</code>
 
 label-base-amount = Base Amount
 label-burn-liquidity = 🔥 Burn Liquidity
