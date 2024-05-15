@@ -4,8 +4,12 @@ import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { generateBurnTokensMessage } from './helpers';
-import { serviceSettings, serviceWallets } from '@root/services';
+import { generateWelcomeMessage, generateBurnTokensMessage } from './helpers';
+import {
+  serviceLiquidityPool,
+  serviceSettings,
+  serviceWallets,
+} from '@root/services';
 import { serviceToken } from '@root/services';
 import { serviceBurnTokens } from '@root/services';
 import { command } from './constants';
@@ -39,7 +43,7 @@ const burnLiquidityMenu = new Menu<MainContext>('burn-liquidity-menu')
       if (ctx.session.burnLiquidity.burnAmount !== 100) {
         ctx.session.burnLiquidity.burnAmount = 100;
         const message = await generateBurnTokensMessage(ctx);
-        ctx.editMessageText(message);
+        ctx.editMessageText(message, { parse_mode: 'HTML' });
       }
     },
   )
@@ -47,6 +51,31 @@ const burnLiquidityMenu = new Menu<MainContext>('burn-liquidity-menu')
     const value = ctx.session.burnLiquidity.burnAmount;
     return `${value < 100 ? '✅ ' : ''} X%`;
   }, inputBurnAmountCbQH)
+  .row()
+  .back('🔙 Back', async (ctx) => {
+    const welcomeMessage = await generateWelcomeMessage(ctx);
+    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+  })
+  .text(
+    (ctx) => '🗑 Clear Information',
+    async (ctx: MainContext) => {
+      const initialized = isInitialized(ctx);
+      if (initialized) {
+        return;
+      }
+
+      initSessionData(ctx);
+
+      try {
+        const message = await generateBurnTokensMessage(ctx);
+        ctx.editMessageText(message, { parse_mode: 'HTML' });
+      } catch (err) {
+        if (err) {
+          console.log(err);
+        }
+      }
+    },
+  )
   .row()
   .text((ctx) => ctx.t('label-burn-liquidity'), fireBurnLiquidityCbQH);
 // .row()
@@ -171,14 +200,12 @@ async function fireBurnLiquidityRouteHandler(ctx: MainContext) {
 async function fireBurnLiquidityCbQH(ctx: MainContext) {
   let processMessageId = 0;
   try {
-    console.log(ctx.session.burnLiquidity);
-    console.log(ctx.chat!.id, ctx.session.burnLiquidity.tokenAddress);
-    const mintToken = await serviceToken.getMintToken(
+    const pool = await serviceLiquidityPool.getLiquidityPool(
       ctx.chat!.id,
       ctx.session.burnLiquidity.tokenAddress,
     );
-    if (!mintToken) {
-      await ctx.reply('🔴 Token information not found.');
+    if (!pool) {
+      await ctx.reply('🔴 Cannot find the target pool for Token.');
       return;
     }
 
@@ -188,6 +215,10 @@ async function fireBurnLiquidityCbQH(ctx: MainContext) {
       return;
     }
 
+    const walletPrivateKey = primaryWallet.privateKey;
+    const poolId = pool.poolId;
+    const burnPercent = ctx.session.burnLiquidity.burnAmount;
+
     const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
 
     const msg = await ctx.reply(
@@ -196,26 +227,24 @@ async function fireBurnLiquidityCbQH(ctx: MainContext) {
 
     processMessageId = msg.message_id;
 
-    const walletPrivateKey = primaryWallet.privateKey;
-    const mintAddress = mintToken.mintAddress;
-    const mintSupply = mintToken.supply;
-    const mintDecimals = mintToken.decimals;
-    const burnPercent = ctx.session.burnLiquidity.burnAmount;
-
+    /*    const walletPrivateKey =
+      '26cxXRQDbbtMFmviHXMxdFJRGX8CGAbVQxwsSYcge9hRhpFSGMp1so6LFstY7fRyyArGoGqg6uXGAPDbYA6zAxp8';
+    const mintAddress = '8DwbunBFEDSebL1tWUFrgGHHspY6n4qaU1Qf6HEBF6Tp';
+    const poolId = '100000000';
+    const burnPercent = 5;
+*/
     const res = await serviceBurnTokens.burnTokens(
       walletPrivateKey,
-      mintAddress,
-      mintSupply,
-      mintDecimals,
+      poolId,
       burnPercent,
       botSettings?.solTxTip || 0.0001,
     );
 
-    if (!res) {
-      throw 'Failed burn';
+    if (!res.Ok) {
+      throw res.err;
     }
 
-    const message = `🔥 Successful burn, Check <a href="https://explorer.solana.com/tx/${res.txid}">here</a>.`;
+    const message = `🔥 Successful burn, Check <a href="https://explorer.solana.com/tx/${res.tx}">here</a>.`;
     if (processMessageId > 0) {
       await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
         parse_mode: 'HTML',
@@ -224,7 +253,7 @@ async function fireBurnLiquidityCbQH(ctx: MainContext) {
       await ctx.reply(message, { parse_mode: 'HTML' });
     }
   } catch (err: any) {
-    const message = '🔴 Failed to burn tokens.';
+    const message = `🔴 ${err}`;
     if (processMessageId > 0) {
       await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
         parse_mode: 'HTML',
@@ -234,3 +263,18 @@ async function fireBurnLiquidityCbQH(ctx: MainContext) {
     }
   }
 }
+
+const initSessionData = (ctx: MainContext) => {
+  ctx.session.burnLiquidity.tokenAddress = '';
+  ctx.session.burnLiquidity.burnAmount = 100;
+};
+
+const isInitialized = (ctx: MainContext) => {
+  if (
+    ctx.session.burnLiquidity.tokenAddress !== '' ||
+    ctx.session.burnLiquidity.burnAmount !== 100
+  ) {
+    return false;
+  }
+  return true;
+};
