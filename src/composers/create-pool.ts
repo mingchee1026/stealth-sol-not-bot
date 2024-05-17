@@ -5,7 +5,7 @@ import { Menu } from '@grammyjs/menu';
 import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 import { MainContext } from '@root/configs/context';
-import { generateCreatePoolMessage } from './helpers';
+import { generateWelcomeMessage, generateCreatePoolMessage } from './helpers';
 import { getPrimaryWallet } from '@root/services/wallet-service';
 import {
   serviceSettings,
@@ -67,16 +67,16 @@ const createPoolMenu = new Menu<MainContext>('create-pool-menu')
   // .text(
   //   async (ctx: any) => {
   //     const value = ctx.session.createPool.quoteToken;
-  //     return `${value === 'USDT' ? '✅ ' : ''} USDT`;
+  //     return `${value === 'USDC' ? '✅ ' : ''} USDC`;
   //   },
   //   async (ctx: any) => {
-  //     ctx.session.createPool.quoteToken = 'USDT';
+  //     ctx.session.createPool.quoteToken = 'USDC';
   //     ctx.menu.update();
   //   },
   // )
   // .row()
-  .text((ctx) => ctx.t('label-liquidity-amount'), inputLiquidityAmountCbQH)
   .text((ctx) => ctx.t('label-liquidity-percent'), inputLiquidityPercentCbQH)
+  .text((ctx) => ctx.t('label-liquidity-amount'), inputLiquidityAmountCbQH)
   .row()
   .text(
     (ctx) => `🛒 Buyers Information`,
@@ -93,6 +93,31 @@ const createPoolMenu = new Menu<MainContext>('create-pool-menu')
   .row()
   .text('Buyer 3 Sol Account', inputBuyer3SolAmountCbQH)
   .text('Buyer 3 Private Key', inputBuyer3PrivateKeyCbQH)
+  .row()
+  .back('🔙 Back', async (ctx) => {
+    const welcomeMessage = await generateWelcomeMessage(ctx);
+    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+  })
+  .text(
+    (ctx) => '🗑 Clear Information',
+    async (ctx: MainContext) => {
+      const initialized = isInitialized(ctx);
+      if (initialized) {
+        return;
+      }
+
+      initSessionData(ctx);
+
+      try {
+        const message = await generateCreatePoolMessage(ctx);
+        ctx.editMessageText(message, { parse_mode: 'HTML' });
+      } catch (err) {
+        if (err) {
+          console.log(err);
+        }
+      }
+    },
+  )
   .row()
   .text('⚡ Bundle', fireCreatePoolCbQH);
 // .row()
@@ -348,6 +373,14 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
     const text = ctx.msg!.text as string;
     switch (ctx.session.step) {
       case Route.POOL_MARKET_ID:
+        const marketInfo = await serviceOpenmarket.getOpenmarketById(
+          ctx.chat!.id,
+          text,
+        );
+        if (!marketInfo) {
+          await ctx.reply('🔴 Please enter the correct Market ID.');
+          return;
+        }
         ctx.session.createPool.marketId = text;
         break;
       case Route.POOL_BASE_TOKEN:
@@ -363,14 +396,21 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
         ctx.session.createPool.tokenLiquidity = Number(text);
         break;
       case Route.POOL_LIQUIDITY_PERCENT:
-        ctx.session.createPool.amountOfPercentage = Number(text);
+        let amountOfPercentage = Number(text);
+        if (amountOfPercentage < 0.0001) {
+          amountOfPercentage = 0.0001;
+        }
+        if (amountOfPercentage > 100) {
+          amountOfPercentage = 100;
+        }
+        ctx.session.createPool.amountOfPercentage = amountOfPercentage;
         break;
       case Route.POOL_BUYER_1_SOL:
         if (ctx.session.createPool.buyerInfos[0]) {
           ctx.session.createPool.buyerInfos[0].amount = Number(text);
         } else {
           ctx.session.createPool.buyerInfos[0] = {
-            id: 1,
+            id: 0,
             amount: Number(text),
             privateKey: '',
           };
@@ -381,7 +421,7 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
           ctx.session.createPool.buyerInfos[0].privateKey = text;
         } else {
           ctx.session.createPool.buyerInfos[0] = {
-            id: 1,
+            id: 0,
             amount: 0,
             privateKey: text,
           };
@@ -414,7 +454,7 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
           ctx.session.createPool.buyerInfos[2].amount = Number(text);
         } else {
           ctx.session.createPool.buyerInfos[2] = {
-            id: 1,
+            id: 2,
             amount: Number(text),
             privateKey: '',
           };
@@ -425,7 +465,7 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
           ctx.session.createPool.buyerInfos[2].privateKey = text;
         } else {
           ctx.session.createPool.buyerInfos[2] = {
-            id: 1,
+            id: 2,
             amount: 0,
             privateKey: text,
           };
@@ -481,12 +521,12 @@ async function firePoolInfomationRouteHandler(ctx: MainContext) {
 async function fireCreatePoolCbQH(ctx: MainContext) {
   let processMessageId = 0;
   try {
-    const marketInfo = await serviceOpenmarket.getOpenmarket(
+    const marketInfo = await serviceOpenmarket.getOpenmarketById(
       ctx.chat!.id,
       ctx.session.createPool.marketId,
     );
     if (!marketInfo) {
-      await ctx.reply('🔴 Please enter Market ID.');
+      await ctx.reply('🔴 Please enter the correct Market ID.');
       return;
     }
 
@@ -566,23 +606,25 @@ async function fireCreatePoolCbQH(ctx: MainContext) {
 
     // console.log(inputData);
 
-    const doBundle = await serviceLiquidityPool.launchLiquidityPool(
+    const res = await serviceLiquidityPool.launchLiquidityPool(
       inputData,
       solTxnTip,
     );
 
-    console.log('Create Pool Result:', doBundle);
+    console.log('Create Pool Result:', res);
 
-    if (!doBundle) {
+    if (!res) {
       throw 'Bundle Failed.';
+    } else if (res.err) {
+      throw res.err;
     } else if (
-      doBundle.poolId &&
-      doBundle.bundleRes
+      res.poolId &&
+      res.bundleId
       // doBundle.bundleRes.bundleId
     ) {
       const message = `
-      🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${doBundle.bundleRes.bundleId}' target='_blank'>here</a>.
-         Pool ID: ${doBundle.poolId}`;
+      🟢 Success Transaction, check <a href='https://explorer.jito.wtf/bundle/${res.bundleId}' target='_blank'>here</a>.
+         Pool ID: ${res.poolId}`;
 
       if (processMessageId > 0) {
         await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
@@ -594,7 +636,7 @@ async function fireCreatePoolCbQH(ctx: MainContext) {
 
       await serviceLiquidityPool.saveLiquidityPool({
         chatId: ctx.chat!.id,
-        poolId: doBundle.poolId,
+        poolId: res.poolId,
         baseToken: inputData.createTokenInfo.address,
         quoteToken: inputData.marketSettings.quoteTokenAddress,
         tokenLiquidity: ctx.session.createPool.tokenLiquidity,
@@ -602,8 +644,10 @@ async function fireCreatePoolCbQH(ctx: MainContext) {
         buyerInfos: ctx.session.createPool.buyerInfos,
         blockEngine: ctx.session.createPool.blockEngine,
         deployWallet: deployWallet.publicKey,
-        bundleId: doBundle.bundleRes?.bundleId,
+        bundleId: res.bundleRes?.bundleId,
       });
+
+      // initSessionData(ctx);
     } else {
       throw 'Bundle Failed.';
     }
@@ -620,3 +664,22 @@ async function fireCreatePoolCbQH(ctx: MainContext) {
     }
   }
 }
+
+const initSessionData = (ctx: MainContext) => {
+  ctx.session.createPool.marketId = '';
+  ctx.session.createPool.tokenLiquidity = 0;
+  ctx.session.createPool.amountOfPercentage = 0;
+  ctx.session.createPool.buyerInfos = [];
+};
+
+const isInitialized = (ctx: MainContext) => {
+  if (
+    ctx.session.createPool.marketId !== '' ||
+    ctx.session.createPool.tokenLiquidity !== 0 ||
+    ctx.session.createPool.amountOfPercentage !== 0 ||
+    ctx.session.createPool.buyerInfos.length !== 0
+  ) {
+    return false;
+  }
+  return true;
+};
