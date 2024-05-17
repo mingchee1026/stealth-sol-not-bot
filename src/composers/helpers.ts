@@ -1,12 +1,15 @@
 import Debug from 'debug';
-import { Keyboard, InlineKeyboard } from 'grammy';
 import axios from 'axios';
 
 import { MainContext } from '@root/configs/context';
 import { IWallet } from '@root/models/wallet-model';
-import { getWalletsByUser } from '@root/services/wallet-service';
+import { serviceSettings, serviceWallets } from '@root/services';
+import { ENV } from '@root/configs';
 
 const debug = Debug('bot:transactions:helpers');
+
+const readDocsUrl = 'https://read.docs.com';
+const watchTutorialUrl = 'https://watch.tutorial.com';
 
 const generateWelcomeMessage = async (ctx: MainContext) => {
   const log = debug.extend('generateWelcomeMessage');
@@ -32,7 +35,7 @@ const generateWelcomeMessage = async (ctx: MainContext) => {
 
   let wallets: IWallet[] = [];
   if (ctx.chat) {
-    wallets = await getWalletsByUser(ctx.chat.id);
+    wallets = await serviceWallets.getWalletsByUser(ctx.chat.id);
   }
 
   const primaryWallet = wallets.find((wallet) => wallet.isPrimary);
@@ -62,7 +65,7 @@ const generateWalletsMessage = async (ctx: MainContext) => {
 
   let wallets: IWallet[] = [];
   if (ctx.chat) {
-    wallets = await getWalletsByUser(ctx.chat.id);
+    wallets = await serviceWallets.getWalletsByUser(ctx.chat.id);
   }
 
   const primaryWallet = wallets.find((wallet) => wallet.isPrimary);
@@ -81,32 +84,74 @@ const generateWalletsMessage = async (ctx: MainContext) => {
   return welcomeMessage;
 };
 
+const generateSettingsMessage = async (ctx: MainContext) => {
+  const log = debug.extend('generateWalletsMessage');
+
+  let settings = null;
+  if (ctx.chat) {
+    settings = await serviceSettings.getSettings(ctx.chat.id);
+  }
+
+  let solTip = settings?.solTxTip
+    ? toPlainString(settings?.solTxTip.toString())
+    : '0';
+  let bundleTip = settings?.bundleTip
+    ? toPlainString(settings?.bundleTip.toString())
+    : '0';
+
+  let message: string = ctx.t('settings-title', {
+    solTip,
+    bundleTip,
+  });
+
+  return message;
+};
+
 const generateCreateTokenMessage = async (ctx: MainContext) => {
+  let desc = ctx.session.createToken.description;
+  if (desc.length > 33) {
+    desc = desc.replace(/(.{15})(.*?)(.{15})$/, '$1...$3');
+  }
   let message: string = ctx.t('create-token-title', {
     name: ctx.session.createToken.name,
     symbol: ctx.session.createToken.symbol,
     decimals: ctx.session.createToken.decimals,
     supply: ctx.session.createToken.supply,
     image: ctx.session.createToken.image,
-    description: ctx.session.createToken.description,
+    description: desc,
     website: ctx.session.createToken.socials.website,
     telegram: ctx.session.createToken.socials.telegram,
     twitter: ctx.session.createToken.socials.twitter,
+    totalFees: ENV.CREATE_TOKEN_TOTAL_FEES_SOL,
   });
+
+  message = message.concat(
+    `\n    <a href="${readDocsUrl}">Read Docs</a> | <a href="${watchTutorialUrl}">Watch Tutorial</a>`,
+  );
 
   return message;
 };
 
 const generateCreateMarketMessage = async (ctx: MainContext) => {
   let message: string = ctx.t('create-market-title', {
-    baseToken: ctx.session.createMarket.baseMint,
+    baseToken: ctx.session.createMarket.baseMint
+      ? `\n    ${ctx.session.createMarket.baseMint.replace(
+          /(.{10})(.*?)(.{10})$/,
+          '$1...$3',
+        )}`
+      : '',
     quoteToken: ctx.session.createMarket.quoteMint,
     minBuy: ctx.session.createMarket.baseLogSize,
     tickSize: toPlainString(ctx.session.createMarket.tickSize.toString()),
     eventLength: ctx.session.createMarket.eventLength,
     requestLength: ctx.session.createMarket.requestLength,
     orderbookLength: ctx.session.createMarket.orderbookLength,
+    totalFees: ENV.CREATE_MARKET_TOTAL_FEES_SOL,
   });
+
+  message = message.concat(
+    `\n    <a href="${readDocsUrl}">Read Docs</a> | <a href="${watchTutorialUrl}">Watch Tutorial</a>`,
+  );
 
   return message;
 };
@@ -115,34 +160,70 @@ const generateCreatePoolMessage = async (ctx: MainContext) => {
   let buyersInfo = '';
   for (const buyer of ctx.session.createPool.buyerInfos) {
     if (buyersInfo === '') {
-      buyersInfo += `${buyer.privateKey || ''} : ${buyer.amount || '0'} SOL`;
+      buyersInfo += `\n     ${buyer.id + 1}. ${
+        buyer.privateKey.replace(/(.{8})(.*?)(.{8})$/, '$1...$3') || ''
+      } | ${buyer.amount || '0'} SOL`;
     } else {
-      buyersInfo += `\n\n${buyer.privateKey || ''} : ${buyer.amount || '0'} SOL`;
+      buyersInfo += `\n     ${buyer.id + 1}. ${
+        buyer.privateKey.replace(/(.{8})(.*?)(.{8})$/, '$1...$3') || ''
+      } | ${buyer.amount || '0'} SOL`;
     }
   }
   let message: string = ctx.t('create-pool-title', {
-    marketId: ctx.session.createPool.marketId,
+    marketId: ctx.session.createPool.marketId
+      ? `\n       ${ctx.session.createPool.marketId.replace(
+          /(.{15})(.*?)(.{15})$/,
+          '$1...$3',
+        )}`
+      : '',
+    amountPercent: toPlainString(
+      ctx.session.createPool.amountOfPercentage.toString(),
+    ),
     tokenLiquidity: ctx.session.createPool.tokenLiquidity,
-    amountPercent: ctx.session.createPool.amountOfPercentage,
     buyers: buyersInfo,
+    totalFees: ENV.CREATE_POOL_TOTAL_FEES_SOL,
   });
+
+  message = message.concat(
+    `\n    <a href="${readDocsUrl}">Read Docs</a> | <a href="${watchTutorialUrl}">Watch Tutorial</a>`,
+  );
 
   return message;
 };
 
 const generateBurnTokensMessage = async (ctx: MainContext) => {
   let message: string = ctx.t('burn-tokens-title', {
-    tokenAddress: ctx.session.burnLiquidity.tokenAddress,
+    tokenAddress: ctx.session.burnLiquidity.tokenAddress
+      ? `\n       ${ctx.session.burnLiquidity.tokenAddress.replace(
+          /(.{10})(.*?)(.{10})$/,
+          '$1...$3',
+        )}`
+      : '',
     amount: ctx.session.burnLiquidity.burnAmount,
+    totalFees: ENV.BURN_TOKENS_TOTAL_FEES_SOL,
   });
+
+  message = message.concat(
+    `\n    <a href="${readDocsUrl}">Read Docs</a> | <a href="${watchTutorialUrl}">Watch Tutorial</a>`,
+  );
 
   return message;
 };
 
 const generateRemoveLPMessage = async (ctx: MainContext) => {
   let message: string = ctx.t('remove-liquidity-title', {
-    tokenAddress: ctx.session.removeLiquidity.tokenAddress,
+    tokenAddress: ctx.session.removeLiquidity.tokenAddress
+      ? `\n       ${ctx.session.removeLiquidity.tokenAddress.replace(
+          /(.{10})(.*?)(.{10})$/,
+          '$1...$3',
+        )}`
+      : '',
+    totalFees: ENV.REMOVE_LP_TOTAL_FEES_SOL,
   });
+
+  message = message.concat(
+    `\n    <a href="${readDocsUrl}">Read Docs</a> | <a href="${watchTutorialUrl}">Watch Tutorial</a>`,
+  );
 
   return message;
 };
@@ -174,6 +255,7 @@ const getSolPrice = async () => {
 
 export {
   generateWelcomeMessage,
+  generateSettingsMessage,
   generateWalletsMessage,
   generateCreateTokenMessage,
   generateCreateMarketMessage,
