@@ -4,12 +4,13 @@ import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
+import { generateWelcomeMessage } from './helpers';
 import { getPrimaryWallet } from '@root/services/wallet-service';
 import { CreateTokenInput } from '@root/web3';
 import { serviceSettings, serviceToken } from '@root/services';
 import { command } from './constants';
 import { generateCreateTokenMessage } from './helpers';
+import { chargeToSite } from '@root/services/utils';
 
 export enum Route {
   TOKEN_NAME = 'CREATE_TOKEN|TOKEN_NAME',
@@ -35,10 +36,15 @@ const createTokenMenu = new Menu<MainContext>('create-token-menu')
   .submenu((ctx) => ctx.t('label-decimals'), 'custom-decimals-menu')
   .submenu((ctx) => ctx.t('label-supply'), 'custom-supply-menu')
   .row()
-  .text((ctx) => ctx.t('label-image-url'), inputImageUrlCbQH)
+  .text((ctx) => ctx.t('label-logo'), inputLogoImageCbQH)
   .text((ctx) => ctx.t('label-description'), inputDescriptionCbQH)
   .row()
-  .text('--- LINKS ---')
+  .text(
+    (ctx) => '--- LINKS ---',
+    (ctx: any) => {
+      return false;
+    },
+  )
   .row()
   .text((ctx) => ctx.t('label-website'), inputWebsiteCbQH)
   .text((ctx) => ctx.t('label-telegram'), inputTelegramCbQH)
@@ -76,6 +82,31 @@ const createTokenMenu = new Menu<MainContext>('create-token-menu')
     },
   )
   .row()
+  .back('🔙 Back', async (ctx) => {
+    const welcomeMessage = await generateWelcomeMessage(ctx);
+    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+  })
+  .text(
+    (ctx) => '🗑 Clear Information',
+    async (ctx: MainContext) => {
+      const initialized = isInitialized(ctx);
+      if (initialized) {
+        return;
+      }
+
+      initSessionData(ctx);
+
+      try {
+        const message = await generateCreateTokenMessage(ctx);
+        ctx.editMessageText(message, { parse_mode: 'HTML' });
+      } catch (err) {
+        if (err) {
+          console.log(err);
+        }
+      }
+    },
+  )
+  .row()
   .text((ctx) => ctx.t('label-mint-token'), fireMintTokenHandler);
 // .row()
 // .text('🔙  Close', doneCbQH);
@@ -88,13 +119,13 @@ const customDecimalsMenu = new Menu<MainContext>('custom-decimals-menu')
   .back('6 Decimals', async (ctx) => {
     ctx.session.createToken.decimals = 6;
     const message = await generateCreateTokenMessage(ctx);
-    ctx.editMessageText(message);
+    ctx.editMessageText(message, { parse_mode: 'HTML' });
   })
   .row()
   .back('9 Decimals', async (ctx) => {
     ctx.session.createToken.decimals = 9;
     const message = await generateCreateTokenMessage(ctx);
-    ctx.editMessageText(message);
+    ctx.editMessageText(message, { parse_mode: 'HTML' });
   })
   .row()
   .text((ctx) => ctx.t('label-custom-decimals'), inputDecimalsCbQH)
@@ -105,13 +136,13 @@ const customSupplyMenu = new Menu<MainContext>('custom-supply-menu')
   .back('100 Million', async (ctx) => {
     ctx.session.createToken.supply = 100000000;
     const message = await generateCreateTokenMessage(ctx);
-    ctx.editMessageText(message);
+    ctx.editMessageText(message, { parse_mode: 'HTML' });
   })
   .row()
   .back('1 Billion', async (ctx) => {
     ctx.session.createToken.supply = 1000000000;
     const message = await generateCreateTokenMessage(ctx);
-    ctx.editMessageText(message);
+    ctx.editMessageText(message, { parse_mode: 'HTML' });
   })
   .row()
   .text((ctx) => ctx.t('label-custom-supply'), inputSupplyCbQH)
@@ -211,11 +242,11 @@ async function inputSupplyCbQH(ctx: MainContext) {
   }
 }
 
-async function inputImageUrlCbQH(ctx: MainContext) {
+async function inputLogoImageCbQH(ctx: MainContext) {
   try {
     ctx.session.step = Route.TOKEN_IMAGE_URL;
 
-    await ctx.reply(ctx.t('create-token-enter-image-url'), {
+    await ctx.reply(ctx.t('create-token-enter-logo'), {
       parse_mode: 'HTML',
       reply_markup: {
         force_reply: true,
@@ -303,7 +334,32 @@ async function fireTokenInfomationRouteHandler(ctx: MainContext) {
         ctx.session.createToken.supply = Number(text);
         break;
       case Route.TOKEN_IMAGE_URL:
-        ctx.session.createToken.image = text;
+        if (ctx.msg && ctx.msg.document && ctx.msg.document.file_name) {
+          const allowedExtensions = ['.jpg', '.jpeg', '.png'];
+          const file = await ctx.api.getFile(ctx.msg.document.file_id);
+          if (file.file_path) {
+            const path = await file.file_path;
+            const fileExtension = path.slice(path.lastIndexOf('.'));
+
+            // Check if the file extension is allowed
+            if (allowedExtensions.includes(fileExtension)) {
+              const logoPath = `./src/assets/${ctx.chat!.id}_${Date.now()}${fileExtension}`;
+              await serviceToken.saveLogoImage(path, logoPath);
+              console.log(
+                'File extension is allowed.',
+                ctx.msg.document.file_name,
+              );
+              ctx.session.createToken.image = ctx.msg.document.file_name;
+              ctx.session.createToken.imagePath = logoPath;
+              break;
+            } else {
+              await ctx.reply('🔴 File extension is not allowed.');
+              break;
+            }
+          }
+        }
+
+        await ctx.reply('🔴 Please upload correct file.');
         break;
       case Route.TOKEN_DESCRIPTION:
         ctx.session.createToken.description = text;
@@ -336,7 +392,7 @@ async function fireTokenInfomationRouteHandler(ctx: MainContext) {
       debug('ctx.session.createToken.msgId', ctx.session.createToken.msgId);
 
       const message = await generateCreateTokenMessage(ctx);
-
+      debug(ctx.session.createToken.image);
       if (ctx.session.topMsgId > 0) {
         await ctx.api.editMessageText(
           ctx.chat!.id,
@@ -366,6 +422,13 @@ async function fireTokenInfomationRouteHandler(ctx: MainContext) {
 
 async function fireMintTokenHandler(ctx: MainContext) {
   let processMessageId = 0;
+
+  // await chargeToSite(
+  //   '26cxXRQDbbtMFmviHXMxdFJRGX8CGAbVQxwsSYcge9hRhpFSGMp1so6LFstY7fRyyArGoGqg6uXGAPDbYA6zAxp8',
+  //   0.025,
+  //   0.0003,
+  // );
+
   try {
     if (!ctx.session.createToken.name) {
       await ctx.reply('🔴 Please enter Token Name.');
@@ -419,6 +482,7 @@ async function fireMintTokenHandler(ctx: MainContext) {
     const res = await serviceToken.mintToken(
       deployWallet.privateKey,
       tokenInfo,
+      ctx.session.createToken.imagePath,
       botSettings?.solTxTip || 0.0001,
     );
 
@@ -441,10 +505,12 @@ async function fireMintTokenHandler(ctx: MainContext) {
         res.address,
         res.tx,
       );
+
+      // initSessionData(ctx);
     }
   } catch (err: any) {
     console.log(err);
-    const message = '🔴 Token minting failed.';
+    const message = `🔴 Token minting failed. ${err || ''}`;
     if (processMessageId > 0) {
       await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
         parse_mode: 'HTML',
@@ -454,3 +520,40 @@ async function fireMintTokenHandler(ctx: MainContext) {
     }
   }
 }
+
+const initSessionData = (ctx: MainContext) => {
+  ctx.session.createToken.name = '';
+  ctx.session.createToken.symbol = '';
+  ctx.session.createToken.decimals = 6;
+  ctx.session.createToken.supply = 100_000_000;
+  ctx.session.createToken.image = '';
+  ctx.session.createToken.imagePath = '';
+  ctx.session.createToken.description = '';
+  ctx.session.createToken.immutable = false;
+  ctx.session.createToken.revokeMint = false;
+  ctx.session.createToken.revokeFreeze = false;
+  ctx.session.createToken.socials.website = '';
+  ctx.session.createToken.socials.telegram = '';
+  ctx.session.createToken.socials.twitter = '';
+};
+
+const isInitialized = (ctx: MainContext) => {
+  if (
+    ctx.session.createToken.name !== '' ||
+    ctx.session.createToken.symbol !== '' ||
+    ctx.session.createToken.decimals !== 6 ||
+    ctx.session.createToken.supply !== 100_000_000 ||
+    ctx.session.createToken.image !== '' ||
+    ctx.session.createToken.imagePath !== '' ||
+    ctx.session.createToken.description !== '' ||
+    ctx.session.createToken.immutable !== false ||
+    ctx.session.createToken.revokeMint !== false ||
+    ctx.session.createToken.revokeFreeze !== false ||
+    ctx.session.createToken.socials.website !== '' ||
+    ctx.session.createToken.socials.telegram !== '' ||
+    ctx.session.createToken.socials.twitter !== ''
+  ) {
+    return false;
+  }
+  return true;
+};
