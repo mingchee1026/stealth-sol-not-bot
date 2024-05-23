@@ -4,7 +4,7 @@ import { Router } from '@grammyjs/router';
 import { Menu } from '@grammyjs/menu';
 
 import { MainContext } from '@root/configs/context';
-import { generateRemoveLPMessage } from './helpers';
+import { generateWelcomeMessage, generateRemoveLPMessage } from './helpers';
 import {
   serviceSettings,
   serviceWallets,
@@ -24,6 +24,31 @@ const router = new Router<MainContext>((ctx) => ctx.session.step);
 
 const removeLiquidityMenu = new Menu<MainContext>('remove-liquidity-menu')
   .text((ctx) => ctx.t('label-token-address'), inputBaseTokenCbQH)
+  .row()
+  .back('🔙 Back', async (ctx) => {
+    const welcomeMessage = await generateWelcomeMessage(ctx);
+    await ctx.editMessageText(welcomeMessage, { parse_mode: 'HTML' });
+  })
+  .text(
+    (ctx) => '🗑 Clear Information',
+    async (ctx: MainContext) => {
+      const initialized = isInitialized(ctx);
+      if (initialized) {
+        return;
+      }
+
+      initSessionData(ctx);
+
+      try {
+        const message = await generateRemoveLPMessage(ctx);
+        ctx.editMessageText(message, { parse_mode: 'HTML' });
+      } catch (err) {
+        if (err) {
+          console.log(err);
+        }
+      }
+    },
+  )
   .row()
   .text((ctx) => ctx.t('label-remove-liquidity'), fireRemoveLiquidityCbQH);
 // .row()
@@ -129,22 +154,23 @@ async function fireRouteHandler(ctx: MainContext) {
 async function fireRemoveLiquidityCbQH(ctx: MainContext) {
   let processMessageId = 0;
   try {
-    console.log(ctx.session.removeLiquidity);
-
-    // const pool = await serviceLiquidityPool.getLiquidityPool(
-    //   ctx.chat!.id,
-    //   ctx.session.removeLiquidity.tokenAddress,
-    // );
-    // if (!pool) {
-    //   await ctx.reply('🔴 Cannot find the target pool for Token.');
-    //   return;
-    // }
+    const pool = await serviceLiquidityPool.getLiquidityPool(
+      ctx.chat!.id,
+      ctx.session.removeLiquidity.tokenAddress,
+    );
+    if (!pool) {
+      await ctx.reply('🔴 Cannot find the target pool for Token.');
+      return;
+    }
 
     const primaryWallet = await serviceWallets.getPrimaryWallet(ctx.chat!.id);
     if (!primaryWallet) {
       await ctx.reply('🔴 Please select Primary Wallet.');
       return;
     }
+
+    const walletPrivateKey = primaryWallet.privateKey;
+    const poolId = pool.poolId;
 
     const botSettings = await serviceSettings.getSettings(ctx.chat!.id);
 
@@ -155,14 +181,13 @@ async function fireRemoveLiquidityCbQH(ctx: MainContext) {
     processMessageId = msg.message_id;
 
     const res = await serviceRemovePool.removeLiquidityPool(
-      '2SmGbt8u6r6tFGjCfzw86MereuLbXV8v3J4SyKSS8jnz6nssYyRciApJJStcprmyJXsMsVpc391h9vi8VmeC4mYn', // primaryWallet.privateKey,
-      'HjZi2MYqd8N1NpihvJ1g56ZYMCWC3LexSzEbVEwHaXSC', // ctx.session.removeLiquidity.tokenAddress,
-      '8RbHdvzwFrHers8r8s2LPAPeLmU2jyPtCST1wDWj2sQL', // pool.poolId,
+      walletPrivateKey,
+      poolId,
       botSettings?.solTxTip || 0.0001,
     );
 
-    if (res) {
-      const message = `🟢 Successfully removed, Check <a href="https://explorer.solana.com/tx/${res}">here</a>.`;
+    if (res.Ok) {
+      const message = `🟢 Successfully removed, Check <a href="https://explorer.solana.com/tx/${res.tx}">here</a>.`;
       if (processMessageId > 0) {
         await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
           parse_mode: 'HTML',
@@ -171,7 +196,7 @@ async function fireRemoveLiquidityCbQH(ctx: MainContext) {
         await ctx.reply(message, { parse_mode: 'HTML' });
       }
     } else {
-      throw 'Tx failed';
+      throw res.err;
     }
   } catch (err: any) {
     const message = '🔴 Failed remove Liquidity Pool.';
@@ -184,3 +209,14 @@ async function fireRemoveLiquidityCbQH(ctx: MainContext) {
     }
   }
 }
+
+const initSessionData = (ctx: MainContext) => {
+  ctx.session.removeLiquidity.tokenAddress = '';
+};
+
+const isInitialized = (ctx: MainContext) => {
+  if (ctx.session.removeLiquidity.tokenAddress !== '') {
+    return false;
+  }
+  return true;
+};
