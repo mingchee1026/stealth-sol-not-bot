@@ -13,6 +13,7 @@ import {
   createWallets,
   removeAllWallets,
   sendSOLToPrimaryWallet,
+  sendSOLToWallets,
 } from '@root/services/wallet-service';
 import {
   getKeypairFromUint8Array,
@@ -22,7 +23,9 @@ import { command } from './constants';
 import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
 
 export enum Route {
-  WALLET_PRIMARYKEY = 'WALLETS|WALLET_PRIMARYKEY',
+  WALLET_CONNECT_PRIMARYKEY = 'WALLETS|WALLET_CONNECT_PRIMARYKEY',
+  WALLET_TRANSFER_ALL_SOL = 'WALLETS|WALLET_TRANSFER_ALL_SOL',
+  WALLET_TRANSFER_TO_SOL = 'WALLETS|WALLET_TRANSFER_TO_SOL',
 }
 
 const debug = Debug(`bot:wallet`);
@@ -69,6 +72,19 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
            `,
               {
                 parse_mode: 'HTML',
+              },
+            );
+
+            ctx.session.step = Route.WALLET_TRANSFER_TO_SOL;
+            ctx.session.wallets.selWallet = wallet.publicKey;
+
+            await ctx.reply(
+              `Enter Address with Amount.\nThe address and amount are separated by commas.\n\nExample:\nDFSZR8YMjyBtSoZK16PK76XvFi1Efc4gyGM4NF89Pzxo,0.01`,
+              {
+                parse_mode: 'HTML',
+                reply_markup: {
+                  force_reply: true,
+                },
               },
             );
           },
@@ -119,6 +135,8 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
     async (ctx: any) => {
       let addresses = '';
       let privateKeys = '';
+      let wallets: IWallet[] = [];
+
       for (let idx = 0; idx < 3; idx++) {
         const walletKeyPair = Keypair.generate();
         const privateKey = getKeypairFromUint8Array(walletKeyPair.secretKey);
@@ -128,12 +146,19 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
           return;
         }
 
-        // Save user wallet info to the database
-        await createWallet(ctx.chat.id, privateKey, publicKey);
+        wallets.push({
+          chatId: ctx.chat!.id,
+          privateKey,
+          publicKey,
+          isPrimary: false,
+        });
 
         addresses += publicKey + '\n';
         privateKeys += privateKey + '\n';
       }
+
+      // Save user wallet info to the database
+      await createWallets(wallets);
 
       // ctx.menu.update();
       const walletsMessage = await generateWalletsMessage(ctx);
@@ -156,6 +181,8 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
     async (ctx: any) => {
       let addresses = '';
       let privateKeys = '';
+      let wallets: IWallet[] = [];
+
       for (let idx = 0; idx < 5; idx++) {
         const walletKeyPair = Keypair.generate();
         const privateKey = getKeypairFromUint8Array(walletKeyPair.secretKey);
@@ -165,12 +192,19 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
           return;
         }
 
-        // Save user wallet info to the database
-        await createWallet(ctx.chat.id, privateKey, publicKey);
+        wallets.push({
+          chatId: ctx.chat!.id,
+          privateKey,
+          publicKey,
+          isPrimary: false,
+        });
 
         addresses += publicKey + '\n';
         privateKeys += privateKey + '\n';
       }
+
+      // Save user wallet info to the database
+      await createWallets(wallets);
 
       // ctx.menu.update();
       const walletsMessage = await generateWalletsMessage(ctx);
@@ -189,20 +223,7 @@ const walletsMenu = new Menu<MainContext>('wallets-menu')
     },
   )
   .row()
-  .text(
-    (ctx) => ctx.t('label-transfer-all-sol'),
-    async (ctx: any) => {
-      try {
-        await sendSOLToPrimaryWallet(ctx.chat.id);
-
-        ctx.menu.update();
-        const walletsMessage = await generateWalletsMessage(ctx);
-        await ctx.editMessageText(walletsMessage, { parse_mode: 'HTML' });
-      } catch (err) {
-        debug(err);
-      }
-    },
-  )
+  .text((ctx) => ctx.t('label-transfer-all-sol'), inputTransferAllSolCbQH)
   .row()
   .text(
     (ctx) => ctx.t('label-reload-list'),
@@ -245,7 +266,12 @@ bot.use(walletsMenu);
 bot.command(command.WALLETS, walletCommandHandler);
 
 router.route('IDLE', (_, next) => next());
-router.route(Route.WALLET_PRIMARYKEY, fireWalletPrimaryKeyRouteHandler);
+router.route(
+  Route.WALLET_CONNECT_PRIMARYKEY,
+  fireConnectWalletPrimaryKeyRouteHandler,
+);
+router.route(Route.WALLET_TRANSFER_ALL_SOL, fireTransferAllSolRouteHandler);
+router.route(Route.WALLET_TRANSFER_TO_SOL, fireTransferToSolRouteHandler);
 
 bot.use(router);
 
@@ -266,7 +292,7 @@ async function doneCbQH(ctx: MainContext) {
 
 async function inputWalletPrimaryKeyCbQH(ctx: MainContext) {
   try {
-    ctx.session.step = Route.WALLET_PRIMARYKEY;
+    ctx.session.step = Route.WALLET_CONNECT_PRIMARYKEY;
 
     await ctx.reply(ctx.t('wallets-enter-privateKey'), {
       parse_mode: 'HTML',
@@ -274,17 +300,27 @@ async function inputWalletPrimaryKeyCbQH(ctx: MainContext) {
         force_reply: true,
       },
     });
-
-    // await ctx.editMessageText(ctx.t('wallets-enter-privateKey'), {
-    //   parse_mode: 'HTML',
-    //   reply_markup: cancelMenu,
-    // });
   } catch (err: any) {
     debug(err);
   }
 }
 
-async function fireWalletPrimaryKeyRouteHandler(ctx: MainContext) {
+async function inputTransferAllSolCbQH(ctx: MainContext) {
+  try {
+    ctx.session.step = Route.WALLET_TRANSFER_ALL_SOL;
+
+    await ctx.reply('Please enter the receiving wallet address ', {
+      parse_mode: 'HTML',
+      reply_markup: {
+        force_reply: true,
+      },
+    });
+  } catch (err: any) {
+    debug(err);
+  }
+}
+
+async function fireConnectWalletPrimaryKeyRouteHandler(ctx: MainContext) {
   try {
     const text = ctx.msg!.text as string;
     const privateKeys = text.split(';');
@@ -313,7 +349,7 @@ async function fireWalletPrimaryKeyRouteHandler(ctx: MainContext) {
   } catch (err: any) {
     console.log(err);
   } finally {
-    // ctx.session.step = 'IDLE';
+    ctx.session.step = 'IDLE';
 
     try {
       await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
@@ -333,5 +369,128 @@ async function fireWalletPrimaryKeyRouteHandler(ctx: MainContext) {
         reply_markup: walletsMenu,
       },
     );
+  }
+}
+
+async function fireTransferAllSolRouteHandler(ctx: MainContext) {
+  let processMessageId = 0;
+  try {
+    const text = ctx.msg!.text as string;
+
+    await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
+    await ctx.api.deleteMessage(
+      ctx.chat!.id,
+      ctx.update.message!.reply_to_message!.message_id,
+    );
+
+    const msg = await ctx.reply(
+      'SOL transfer in progress. Please wait a moment...',
+    );
+
+    processMessageId = msg!.message_id;
+
+    const tx = await sendSOLToPrimaryWallet(ctx.chat!.id, text);
+
+    const message = `🟢 Transfer SOL Success. Check <a href="https://solscan.io/tx/${tx}">here</a>.`;
+
+    if (processMessageId > 0) {
+      await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.reply(message, { parse_mode: 'HTML' });
+    }
+
+    // const walletsMessage = await generateWalletsMessage(ctx);
+    // await ctx.api.editMessageText(
+    //   ctx.chat!.id,
+    //   ctx.session.topMsgId,
+    //   walletsMessage,
+    //   {
+    //     parse_mode: 'HTML',
+    //     reply_markup: walletsMenu,
+    //   },
+    // );
+  } catch (err: any) {
+    console.log(err);
+    const message = `🔴 Transfer failed. ${err.message || ''}`;
+    if (processMessageId > 0) {
+      await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.reply(message);
+    }
+  }
+}
+
+async function fireTransferToSolRouteHandler(ctx: MainContext) {
+  let processMessageId = 0;
+  try {
+    const text = ctx.msg!.text as string;
+
+    await ctx.api.deleteMessage(ctx.chat!.id, ctx.msg!.message_id);
+    await ctx.api.deleteMessage(
+      ctx.chat!.id,
+      ctx.update.message!.reply_to_message!.message_id,
+    );
+
+    const walletInfo = text.split(',');
+    console.log(walletInfo);
+    if (walletInfo.length != 2) {
+      await ctx.reply('🔴 Please enter Address with Amounts.');
+      return;
+    }
+
+    const msg = await ctx.reply(
+      'SOL transfer in progress. Please wait a moment...',
+    );
+
+    processMessageId = msg!.message_id;
+
+    console.log(
+      ctx.chat!.id,
+      ctx.session.wallets.selWallet,
+      walletInfo[0],
+      Number(walletInfo[1]),
+    );
+
+    const tx = await sendSOLToWallets(
+      ctx.chat!.id,
+      ctx.session.wallets.selWallet,
+      walletInfo[0],
+      Number(walletInfo[1]),
+    );
+
+    const message = `🟢 Transfer SOL Success. Check <a href="https://solscan.io/tx/${tx}">here</a>.`;
+
+    if (processMessageId > 0) {
+      await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.reply(message, { parse_mode: 'HTML' });
+    }
+
+    // const walletsMessage = await generateWalletsMessage(ctx);
+    // await ctx.api.editMessageText(
+    //   ctx.chat!.id,
+    //   ctx.session.topMsgId,
+    //   walletsMessage,
+    //   {
+    //     parse_mode: 'HTML',
+    //     reply_markup: walletsMenu,
+    //   },
+    // );
+  } catch (err: any) {
+    console.log(err);
+    const message = `🔴 Transfer failed. ${err.message || ''}`;
+    if (processMessageId > 0) {
+      await ctx.api.editMessageText(ctx.chat!.id, processMessageId, message, {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.reply(message);
+    }
   }
 }

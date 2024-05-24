@@ -11,7 +11,7 @@ import {
   saveAntiMev,
 } from '@root/services/setting-service';
 import { command } from './constants';
-import { generateWelcomeMessage, generateWalletsMessage } from './helpers';
+import { generateWelcomeMessage, generateSettingsMessage } from './helpers';
 
 export enum Route {
   SOLANA_TX_TIP = 'SETTINGS|SOLANA_TX_TIP',
@@ -58,7 +58,7 @@ bot.use(router);
 export { bot, settingsMenu };
 
 export async function settingsCommandHandler(ctx: MainContext) {
-  const message = ctx.t('settings-title');
+  const message = await generateSettingsMessage(ctx);
   await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: settingsMenu,
@@ -103,9 +103,16 @@ async function inputBundleTipCbQH(ctx: MainContext) {
 async function fireSolanaTipRouteHandler(ctx: MainContext) {
   try {
     const text = ctx.msg!.text as string;
+    let solTip = Number(text);
+    if (solTip < 0.0001) {
+      solTip = 0.0001;
+    }
+    if (solTip > 3) {
+      solTip = 3;
+    }
 
     // Save solana tx tip info to the database
-    await saveSolTxTip(ctx.chat!.id, Number(text));
+    await saveSolTxTip(ctx.chat!.id, solTip);
   } catch (err: any) {
     console.log(err);
   } finally {
@@ -119,25 +126,27 @@ async function fireSolanaTipRouteHandler(ctx: MainContext) {
       );
     } catch (err) {}
 
-    const walletsMessage = await generateWalletsMessage(ctx);
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      ctx.session.topMsgId,
-      walletsMessage,
-      {
-        parse_mode: 'HTML',
-        reply_markup: settingsMenu,
-      },
-    );
+    const message = await generateSettingsMessage(ctx);
+    await ctx.api.editMessageText(ctx.chat!.id, ctx.session.topMsgId, message, {
+      parse_mode: 'HTML',
+      reply_markup: settingsMenu,
+    });
   }
 }
 
 async function fireBundleTipRouteHandler(ctx: MainContext) {
   try {
     const text = ctx.msg!.text as string;
+    let bundleTip = Number(text);
+    if (bundleTip < 0.0001) {
+      bundleTip = 0.0001;
+    }
+    if (bundleTip > 3) {
+      bundleTip = 3;
+    }
 
     // Save bundle tip info to the database
-    await saveBundleTip(ctx.chat!.id, Number(text));
+    await saveBundleTip(ctx.chat!.id, bundleTip);
   } catch (err: any) {
     console.log(err);
   } finally {
@@ -151,15 +160,10 @@ async function fireBundleTipRouteHandler(ctx: MainContext) {
       );
     } catch (err) {}
 
-    const walletsMessage = await generateWalletsMessage(ctx);
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      ctx.session.topMsgId,
-      walletsMessage,
-      {
-        parse_mode: 'HTML',
-        reply_markup: settingsMenu,
-      },
-    );
+    const message = await generateSettingsMessage(ctx);
+    await ctx.api.editMessageText(ctx.chat!.id, ctx.session.topMsgId, message, {
+      parse_mode: 'HTML',
+      reply_markup: settingsMenu,
+    });
   }
 }
