@@ -21,6 +21,9 @@ export interface SessionData {
   topMsgId: number;
   solPrice: number;
   priceUpdated: number;
+  wallets: {
+    selWallet: string;
+  };
   createToken: {
     msgId: number;
     name: string;
@@ -28,6 +31,7 @@ export interface SessionData {
     supply: number;
     decimals: number;
     image: string;
+    imagePath: string;
     description: string;
     socials: {
       website: string;
@@ -45,6 +49,7 @@ export interface SessionData {
     quoteMint: string;
     baseLogSize: number;
     tickSize: number;
+    marketPrice: number;
     eventLength: number;
     requestLength: number;
     orderbookLength: number;
@@ -78,6 +83,9 @@ export function createInitialSessionData() {
     topMsgId: 0,
     solPrice: 0,
     priceUpdated: 0,
+    wallets: {
+      selWallet: '',
+    },
     createToken: {
       msgId: 0,
       name: '',
@@ -85,6 +93,7 @@ export function createInitialSessionData() {
       supply: 100_000_000,
       decimals: 6,
       image: '',
+      imagePath: '',
       description: '',
       socials: {
         website: '',
@@ -100,15 +109,16 @@ export function createInitialSessionData() {
       msgId: 0,
       baseMint: '',
       quoteMint: 'SOL',
-      baseLogSize: 100,
-      tickSize: 0.0000001,
+      baseLogSize: 0,
+      tickSize: 0,
+      marketPrice: 0.4,
       eventLength: 128,
-      requestLength: 63,
+      requestLength: 9,
       orderbookLength: 201,
     },
     createPool: {
       msgId: 0,
-      marketId: '',
+      marketId: 'GaG6ZQKKXPqWBYXHV9Sw755nazAJ9EHwBwkq7xwNUWnG',
       baseToken: '',
       quoteToken: 'SOL',
       baseLogSize: 0,
@@ -116,9 +126,15 @@ export function createInitialSessionData() {
       tokenLiquidity: 0.01,
       amountOfPercentage: 30,
       buyerInfos: [
+        {
+          id: 0,
+          amount: 0.00001,
+          privateKey:
+            '2Dg2VAWQ2mZ1vZoYPnq8yiM5MD9eZq2hPwj5GDJy5GD8yQQAieSjd9RGrrDprdnjXsJGYNoeyY7EozssMr2yDvPt',
+        },
         // {
-        //   id: 0,
-        //   amount: 0.001,
+        //   id: 1,
+        //   amount: 0.00001,
         //   privateKey:
         //     '2Dg2VAWQ2mZ1vZoYPnq8yiM5MD9eZq2hPwj5GDJy5GD8yQQAieSjd9RGrrDprdnjXsJGYNoeyY7EozssMr2yDvPt',
         // },
