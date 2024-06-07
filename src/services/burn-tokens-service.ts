@@ -1,9 +1,13 @@
+import { Wallet } from '@coral-xyz/anchor';
+import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import {
   Connection,
   PublicKey,
   Keypair,
   TransactionMessage,
   VersionedTransaction,
+  SendTransactionError,
+  ComputeBudgetProgram,
 } from '@solana/web3.js';
 import {
   getAccount,
@@ -11,10 +15,17 @@ import {
   createBurnCheckedInstruction,
   getAssociatedTokenAddress,
 } from '@solana/spl-token';
+import { Connectivity } from '@root/web3';
 
-import { ENV, RPC_ENDPOINT_MAIN, RPC_ENDPOINT_DEV } from '@root/configs';
+import {
+  ENV,
+  RPC_ENDPOINT_MAIN,
+  RPC_ENDPOINT_DEV,
+  ATA_INIT_COST,
+} from '@root/configs';
 import { getKeypairFromStr } from '@root/web3/base/utils';
 import { chargeToSite } from './utils';
+import { getPriorityFee } from '@root/web3/priorityFee';
 
 // const WALLET = Keypair.fromSecretKey(new Uint8Array(secret));
 
@@ -23,6 +34,52 @@ import { chargeToSite } from './utils';
 // const BURN_QUANTITY = 1; // Number of tokens to burn (feel free to replace with any number - just make sure you have enough)
 
 export const burnTokens = async (
+  walletPrivateKey: string,
+  poolId: string,
+  burnPercent: number,
+  solTxnsTip: number,
+): Promise<{ Ok: boolean; tx?: string; err?: string }> => {
+  try {
+    const rpcEndpoint = ENV.IN_PRODUCTION
+      ? ENV.RPC_ENDPOINT_MAIN
+      : ENV.RPC_ENDPOINT_DEV;
+    const walletkeyPair = getKeypairFromStr(walletPrivateKey);
+
+    if (!walletkeyPair || !walletkeyPair?.publicKey) {
+      // throw 'Wallet not found';
+      throw 'Primary Wallet not found.';
+    }
+
+    const wallet = new Wallet(walletkeyPair);
+
+    const connectivity = new Connectivity({
+      wallet: wallet,
+      rpcEndpoint: rpcEndpoint,
+      network: ENV.IN_PRODUCTION
+        ? WalletAdapterNetwork.Mainnet
+        : WalletAdapterNetwork.Devnet,
+    });
+
+    const res = await connectivity.burnLiquidity({
+      poolId: new PublicKey(poolId),
+      percentageOfBurn: burnPercent,
+    });
+
+    if (!res) {
+      throw 'Unknown error';
+    }
+
+    if (res.Err) {
+      throw res.Err;
+    }
+
+    return { Ok: true, tx: res.Ok?.txSignature };
+  } catch (error: any) {
+    console.log(error);
+    return { Ok: false, err: error };
+  }
+};
+export const burnTokensBack = async (
   walletPrivateKey: string,
   mintAddress: string,
   supply: number,
@@ -64,7 +121,13 @@ export const burnTokens = async (
 
     console.log(`Token Balance: ${balanceOfToken}`);
 
-    const burnAmount = (balanceOfToken * burnPercent) / 100;
+    const burnAmount = (Number(balanceOfToken * burnPercent) / 100).toFixed(
+      mintDecimals,
+    );
+
+    // if (burnAmount === 0) {
+    //   throw `This wallet doesn't own the token you're trying to burn.`;
+    // }
 
     console.log(`Burn Tokens Amount: ${burnAmount}`);
 
@@ -72,7 +135,7 @@ export const burnTokens = async (
       account, // PublicKey of Owner's Associated Token Account
       new PublicKey(mintAddress), // Public Key of the Token Mint Address
       burnWallet.publicKey, // Public Key of Owner's Wallet
-      burnAmount * 10 ** mintDecimals, // Number of tokens to burn
+      Number(burnAmount) * 10 ** mintDecimals, // Number of tokens to burn
       mintDecimals, // Number of Decimals of the Token Mint
     );
 
@@ -89,10 +152,20 @@ export const burnTokens = async (
     // Step 4 - Assemble Transaction
     console.log(`Step 4 - Assemble Transaction`);
 
+    const priorityFee = getPriorityFee();
+    const txFee =
+      (priorityFee as any)[ENV.BURN_TOKENs_PRIORITY_FEE_KEY] +
+      2 * ATA_INIT_COST +
+      2000000;
+    console.log('burntokens', txFee);
+    const incTxFeeIx = ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: txFee,
+    });
+
     const messageV0 = new TransactionMessage({
       payerKey: burnWallet.publicKey,
       recentBlockhash: blockhash,
-      instructions: [burnIx],
+      instructions: [incTxFeeIx, burnIx],
     }).compileToV0Message();
     const transaction = new VersionedTransaction(messageV0);
     transaction.sign([burnWallet]);
@@ -129,12 +202,16 @@ export const burnTokens = async (
 
     return { txid };
   } catch (err) {
-    console.log(err);
-    return null;
+    // console.log(err);
+    if (err instanceof SendTransactionError) {
+      throw err.message; //`You don't have enough funds to execute this transaction.`;
+    }
+
+    throw err;
   }
 };
 
-export const getTokenBalanceSpl = async (
+const getTokenBalanceSpl = async (
   connection: Connection,
   tokenAccount: string,
 ) => {
