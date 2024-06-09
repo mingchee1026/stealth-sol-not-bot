@@ -12,14 +12,14 @@ import LiquidityPool from '@root/models/liquidity-pool-model';
 import { chargeToSite } from './utils';
 
 const ProcessBundleDataError = {
-  BASE_TOKEN_NOT_FOUND: 'BASE_TOKEN_NOT_FOUND',
-  QUOTE_TOKEN_NOT_FOUND: 'QUOTE_TOKEN_NOT_FOUND',
-  INVALID_BUYER_INFO: 'INVALID_BUYER_INFO',
-  INVALID_BUY_AMOUNT: 'INVALID_BUY_AMOUNT',
-  BUYERS_ARE_NOT_UNIQUE: 'ALL_BUYER_KEY_SHOULD_BE_UNIQUE',
-  INSUFFICIENT_AMOUNT_TO_AIRDROP: 'INSUFFICIENT_AMOUNT_TO_AIRDROP',
-  INVALID_LIQUIDITY_AMOUNT_INPUT: 'INVALID_LIQUIDITY_AMOUNT_INPUT',
-  INVALID_BUNDLE_INPUT: 'INVALID_BUNDLE_INPUT',
+  BASE_TOKEN_NOT_FOUND: 'Base Token not found.', //'BASE_TOKEN_NOT_FOUND',
+  QUOTE_TOKEN_NOT_FOUND: 'Quote Token not found.', //'QUOTE_TOKEN_NOT_FOUND',
+  INVALID_BUYER_INFO: 'Invalid buyer infomation.', //'INVALID_BUYER_INFO',
+  INVALID_BUY_AMOUNT: 'Invalid buyer account.', //'INVALID_BUY_AMOUNT',
+  BUYERS_ARE_NOT_UNIQUE: 'All buyer key should be unique.', // 'ALL_BUYER_KEY_SHOULD_BE_UNIQUE',
+  INSUFFICIENT_AMOUNT_TO_AIRDROP: 'Insufficient account to airdrop_TO_AIRDROP', //'INSUFFICIENT_AMOUNT_TO_AIRDROP',
+  INVALID_LIQUIDITY_AMOUNT_INPUT: 'Invalid Liquidity amount input.', //'INVALID_LIQUIDITY_AMOUNT_INPUT',
+  INVALID_BUNDLE_INPUT: 'Invalid bundle input', //'INVALID_BUNDLE_INPUT',
 };
 
 export async function saveLiquidityPool(liquidityPool: any) {
@@ -39,7 +39,7 @@ export async function getLiquidityPool(chatId: number, baseToken: string) {
 export async function launchLiquidityPool(
   inputData: BundlerInputData,
   solTxnsTip: number,
-) {
+): Promise<LaunchBundleRes> {
   const rpcEndpoint = ENV.IN_PRODUCTION
     ? ENV.RPC_ENDPOINT_MAIN
     : ENV.RPC_ENDPOINT_DEV;
@@ -70,7 +70,7 @@ export async function launchLiquidityPool(
         console.log(
           `Failed generate Bundle data: ${preProcessBundleDataError}`,
         );
-        throw 'Failed generate Bundle data';
+        throw preProcessBundleDataError;
       },
     );
 
@@ -83,16 +83,21 @@ export async function launchLiquidityPool(
       .launchBundleWithMarket(bundleInput, onConsole)
       .catch((launchBundleError) => {
         console.log('Failed generate Bundle data', launchBundleError);
-        throw 'Failed to generate Bundle data.';
+        throw launchBundleError;
       });
+
+    if (!bundleRes) {
+      console.log('bundle failed');
+      throw 'Bundle failed';
+    }
 
     if (bundleRes?.Err) {
       const bunldeErr = bundleRes.Err;
       console.log('Errors when preparing bundle', bunldeErr);
-      throw 'Failed to send bunlde(api).';
+      throw bunldeErr;
     }
 
-    if (!bundleRes || !bundleRes.Ok) {
+    if (!bundleRes.Ok) {
       console.log('bundle failed');
       throw 'Bundle failed';
     }
@@ -107,9 +112,9 @@ export async function launchLiquidityPool(
     );
 
     return bundleInfo;
-  } catch (error) {
+  } catch (error: any) {
     console.log(error);
-    return null;
+    return { err: error };
   }
 }
 
