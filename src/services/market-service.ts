@@ -42,11 +42,24 @@ export async function saveOpenmarket(
   }
 }
 
-export async function getOpenmarket(chatId: number, marketId: string) {
+export async function getOpenmarketById(chatId: number, marketId: string) {
   try {
     const openMarket = await OpenMarket.findOne({
       chatId,
       marketId,
+    });
+
+    return openMarket;
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+export async function getOpenmarketByToken(chatId: number, baseMint: string) {
+  try {
+    const openMarket = await OpenMarket.findOne({
+      chatId,
+      baseMint,
     });
 
     return openMarket;
