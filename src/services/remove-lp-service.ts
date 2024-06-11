@@ -1,3 +1,5 @@
+import { Wallet } from '@coral-xyz/anchor';
+import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import {
   ApiPoolInfoV4,
   LIQUIDITY_STATE_LAYOUT_V4,
@@ -24,17 +26,67 @@ import {
   Signer,
   Transaction,
   VersionedTransaction,
+  ComputeBudgetProgram,
 } from '@solana/web3.js';
 
 import { getAssociatedTokenAddress, getMint } from '@solana/spl-token';
 
-import { ENV, RPC_ENDPOINT_MAIN, RPC_ENDPOINT_DEV } from '@root/configs';
+import {
+  ENV,
+  RPC_ENDPOINT_MAIN,
+  RPC_ENDPOINT_DEV,
+  ATA_INIT_COST,
+} from '@root/configs';
 import { getKeypairFromStr } from '@root/web3/base/utils';
 import { chargeToSite } from './utils';
+import { getPriorityFee } from '@root/web3/priorityFee';
+import { Connectivity } from '@root/web3';
 
 const makeTxVersion = TxVersion.V0;
 
 export const removeLiquidityPool = async (
+  walletPrivateKey: string,
+  poolId: string,
+  solTxnsTip: number,
+): Promise<{ Ok: boolean; tx?: string; err?: string }> => {
+  try {
+    const rpcEndpoint = ENV.IN_PRODUCTION
+      ? ENV.RPC_ENDPOINT_MAIN
+      : ENV.RPC_ENDPOINT_DEV;
+    const walletkeyPair = getKeypairFromStr(walletPrivateKey);
+
+    if (!walletkeyPair || !walletkeyPair?.publicKey) {
+      // throw 'Wallet not found';
+      throw 'Primary Wallet not found.';
+    }
+
+    const wallet = new Wallet(walletkeyPair);
+
+    const connectivity = new Connectivity({
+      wallet: wallet,
+      rpcEndpoint: rpcEndpoint,
+      network: ENV.IN_PRODUCTION
+        ? WalletAdapterNetwork.Mainnet
+        : WalletAdapterNetwork.Devnet,
+    });
+
+    const res = await connectivity.removeLiquidity(new PublicKey(poolId));
+
+    if (!res) {
+      throw 'Unknown error';
+    }
+
+    if (res.Err) {
+      throw res.Err;
+    }
+
+    return { Ok: true, tx: res.Ok?.txSignature };
+  } catch (error: any) {
+    console.log(error);
+    return { Ok: false, err: error };
+  }
+};
+export const removeLiquidityPoolBack = async (
   walletPrivateKey: string,
   tokenAddress: string,
   poolId: string,
@@ -88,7 +140,7 @@ export const removeLiquidityPool = async (
 
     console.log(`    ✅ - Token Balance: ${tokenBalance}`);
 
-    const amountIn = new TokenAmount(removeLpToken, 100);
+    const amountIn = new TokenAmount(removeLpToken, 1);
 
     console.log(`    ✅ - Token Amount: ${amountIn}`);
 
@@ -111,6 +163,16 @@ export const removeLiquidityPool = async (
     );
 
     // Step 3 - Create Burn Instructions
+    const priorityFee = getPriorityFee();
+    const txFee =
+      (priorityFee as any)[ENV.REMOVE_LP_PRIORITY_FEE_KEY] +
+      2 * ATA_INIT_COST +
+      2000000;
+    console.log('burntokens', txFee);
+    const incTxFeeIx = ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: txFee,
+    });
+
     const willSendTx = await buildSimpleTransaction({
       connection,
       makeTxVersion,
@@ -224,7 +286,7 @@ async function sendTx(
   return txids;
 }
 
-export const getTokenBalanceSpl = async (
+const getTokenBalanceSpl = async (
   connection: Connection,
   tokenAccount: string,
 ) => {
@@ -241,4 +303,14 @@ export const getTokenBalanceSpl = async (
   console.log('Balance: ', balance);
 
   return balance;
+};
+
+const getTokenBalanceWeb3 = async (
+  connection: Connection,
+  tokenAccount: PublicKey,
+) => {
+  const info = await connection.getTokenAccountBalance(tokenAccount);
+  if (info.value.uiAmount == null) throw new Error('No balance found');
+  console.log('Balance (using Solana-Web3.js): ', info.value.uiAmount);
+  return info.value.uiAmount;
 };
