@@ -27,12 +27,14 @@ export const createWallet = async (
   privateKey: string,
   publicKey: string,
 ): Promise<boolean> => {
+  const primaryWallet = await getPrimaryWallet(chatId);
+
   try {
     const wallet = new Wallet({
       chatId,
       privateKey,
       publicKey,
-      isPrimary: false,
+      isPrimary: primaryWallet ? false : true,
     });
 
     await wallet.save();
@@ -43,11 +45,14 @@ export const createWallet = async (
   }
 };
 
-export const createWallets = async (
-  privateKeys: IWallet[],
-): Promise<boolean> => {
+export const createWallets = async (wallets: IWallet[]): Promise<boolean> => {
+  const primaryWallet = await getPrimaryWallet(wallets[0].chatId);
+  if (!primaryWallet) {
+    wallets[0].isPrimary = true;
+  }
+
   try {
-    await Wallet.insertMany(privateKeys);
+    await Wallet.insertMany(wallets);
     return true;
   } catch (error) {
     return false;
@@ -122,16 +127,14 @@ export const removeAllWallets = async (chatId: number): Promise<boolean> => {
   }
 };
 
-export const sendSOLToPrimaryWallet = async (chatId: number) => {
+export const sendSOLToPrimaryWallet = async (
+  chatId: number,
+  receiveWallet: string,
+) => {
   let dropList: IWallet[] = [];
   const wallets = await Wallet.find({ chatId });
-  const primaryWallet = wallets.find((wallet) => wallet.isPrimary);
 
-  dropList = wallets.filter((wallet) => !wallet.isPrimary);
-
-  if (!primaryWallet) {
-    return;
-  }
+  dropList = wallets.filter((wallet) => wallet.publicKey != receiveWallet);
 
   console.log('Starting SOL Transfer...');
 
@@ -152,7 +155,7 @@ export const sendSOLToPrimaryWallet = async (chatId: number) => {
     const transaction = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: new PublicKey(wallet.publicKey),
-        toPubkey: new PublicKey(primaryWallet.publicKey),
+        toPubkey: new PublicKey(receiveWallet),
         lamports: LAMPORTS_PER_SOL * balance - 5000,
       }),
     );
@@ -163,9 +166,52 @@ export const sendSOLToPrimaryWallet = async (chatId: number) => {
     ]);
 
     console.log(
-      `Transfer SOL: ${fromKeypair.publicKey} => ${primaryWallet.publicKey}: ${balance} SOL - Signature: ${signature}`,
+      `Transfer SOL: ${fromKeypair.publicKey} => ${receiveWallet}: ${balance} SOL - Signature: ${signature}`,
     );
   }
+};
+
+export const sendSOLToWallets = async (
+  chatId: number,
+  from: string,
+  to: string,
+  amount: number,
+) => {
+  const fromWallet = await Wallet.findOne({ chatId, publicKey: from });
+
+  console.log('Starting SOL Transfer...');
+
+  const RPC_ENDPOINT = ENV.IN_PRODUCTION
+    ? ENV.RPC_ENDPOINT_MAIN
+    : ENV.RPC_ENDPOINT_DEV;
+  const connection = new Connection(RPC_ENDPOINT);
+
+  const fromKeypair = getKeypairFromStr(fromWallet!.privateKey);
+  const balance = await getBalanceBySOL(fromWallet!.publicKey, connection);
+
+  if (!fromKeypair) {
+    throw 'Invalid public key.';
+  }
+
+  // Create a transfer transaction for the total balance
+  const transaction = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: new PublicKey(fromWallet!.publicKey),
+      toPubkey: new PublicKey(to),
+      lamports: LAMPORTS_PER_SOL * amount,
+    }),
+  );
+
+  // Sign and send the transaction
+  const signature = await sendAndConfirmTransaction(connection, transaction, [
+    fromKeypair,
+  ]);
+
+  console.log(
+    `Transfer SOL: ${fromKeypair.publicKey} => ${to}: ${amount} SOL - Signature: ${signature}`,
+  );
+
+  return signature;
 };
 
 function generateTransactions(
