@@ -85,6 +85,7 @@ import {
   getVaultOwnerAndNonce,
 } from './orderbookUtils';
 import useSerumMarketAccountSizes from './getMarketAccountSizes';
+import { sleep } from './utils';
 
 // export const RAYDIUM_AMM_PROGRAM = new web3.PublicKey("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8")
 // const _OPEN_BOOK_DEX_PROGRAM = "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX"
@@ -144,6 +145,23 @@ export type ComputeAnotherAmountInput = {
   slippage?: Percent;
   fixedSide: 'base' | 'quote';
 };
+
+export enum GetPoolKeysError {
+  INVALID_POOL_DATA_LENGTH = 'INVALID_POOL_DATA_LENGTH',
+  INVALID_POOL_ID = 'INVALID_POOL_ID',
+  POOL_NOT_FOUND = 'POOL_NOT_FOUND',
+  MARKET_INFO_NOT_FOUND = 'MARKET_INFO_NOT_FOUND',
+  INVALID_POOL_INFO_FOUND = 'INVALID_POOL_INFO_FOUND',
+  UNKNWON_ERROR = 'UNKNWON_ERROR',
+}
+
+export enum GetMarketStateError {
+  MARKET_INFO_NOT_FOUND,
+}
+export enum GetPoolInfoError {
+  INVALID_INFO,
+  UNKNWON_ERROR = 'UNKNWON_ERROR',
+}
 
 const log = console.log;
 export class BaseRay {
@@ -218,127 +236,142 @@ export class BaseRay {
     return this.cachedPoolKeys.get(poolId.toBase58());
   }
 
-  async getPoolKeys(poolId: web3.PublicKey): Promise<LiquidityPoolKeys> {
-    if (!this.pools) this.pools = new Map();
-    const cache2 = this.cachedPoolKeys.get(poolId.toBase58());
-    if (cache2) {
-      return cache2;
-    }
-    const cache = this.pools.get(poolId.toBase58());
-    if (cache) {
-      return jsonInfo2PoolKeys(cache) as LiquidityPoolKeys;
-    }
-    if (!this.cachedPoolKeys) this.cachedPoolKeys = new Map();
-    const accountInfo = await this.connection.getAccountInfo(poolId);
-    if (!accountInfo) throw 'Pool info not found';
-    let poolState: LiquidityStateV4 | LiquidityStateV5 | undefined = undefined;
-    let version: 4 | 5 | undefined = undefined;
-    const poolAccountOwner = accountInfo.owner;
-    if (accountInfo.data.length == LIQUIDITY_STATE_LAYOUT_V4.span) {
-      poolState = LIQUIDITY_STATE_LAYOUT_V4.decode(accountInfo.data);
-      version = 4;
-    } else if (accountInfo.data.length == LIQUIDITY_STATE_LAYOUT_V5.span) {
-      poolState = LIQUIDITY_STATE_LAYOUT_V5.decode(accountInfo.data);
-      version = 5;
-    } else throw 'Invalid Pool data lenght';
-    if (!poolState || !version) throw 'Invalid pool address';
-
-    const {
-      authority,
-      baseDecimals,
-      baseMint,
-      baseVault,
-      configId,
-      id,
-      lookupTableAccount,
-      lpDecimals,
-      lpMint,
-      lpVault,
-      marketAuthority,
-      marketId,
-      marketProgramId,
-      marketVersion,
-      nonce,
-      openOrders,
-      programId,
-      quoteDecimals,
-      quoteMint,
-      quoteVault,
-      targetOrders,
-      // version,
-      withdrawQueue,
-    } = Liquidity.getAssociatedPoolKeys({
-      baseMint: poolState.baseMint,
-      baseDecimals: poolState.baseDecimal.toNumber(),
-      quoteMint: poolState.quoteMint,
-      quoteDecimals: poolState.quoteDecimal.toNumber(),
-      marketId: poolState.marketId,
-      marketProgramId: poolState.marketProgramId,
-      marketVersion: 3,
-      programId: poolAccountOwner,
-      version,
-    });
-    if (lpMint.toBase58() != poolState.lpMint.toBase58()) {
-      throw 'Found some invalid keys';
-    }
-
-    // log({ version, baseMint: baseMint.toBase58(), quoteMint: quoteMint.toBase58(), lpMint: lpMint.toBase58(), marketId: marketId.toBase58(), marketProgramId: marketProgramId.toBase58() })
-    let marketState: any | undefined = undefined;
-    const marketAccountInfo = await this.connection
+  async getMarketState(
+    connection: web3.Connection,
+    marketId: web3.PublicKey,
+  ): Promise<Result<any, GetMarketStateError>> {
+    const marketAccountInfo = await connection
       .getAccountInfo(marketId)
-      .catch((error) => null);
-    if (!marketAccountInfo) throw 'Market not found';
+      .catch((error) => null)
+      .then(async (res) => {
+        await sleep(1200);
+        return connection.getAccountInfo(marketId);
+      });
+    //TODO: extra check about the market id
+    if (!marketAccountInfo)
+      return { Err: GetMarketStateError.MARKET_INFO_NOT_FOUND };
+    const marketState = RayMarket.getLayouts(3).state.decode(
+      marketAccountInfo.data,
+    );
+    return { Ok: marketState };
+  }
+
+  async getPoolKeys(
+    connection: web3.Connection,
+    poolId: web3.PublicKey,
+  ): Promise<Result<LiquidityPoolKeys, GetPoolKeysError>> {
     try {
-      const t = RayMarket.getLayouts(marketVersion).state.decode(
-        marketAccountInfo.data,
-      );
-      marketState = RayMarket.getLayouts(marketVersion).state.decode(
-        marketAccountInfo.data,
-      );
-      // if (mProgramIdStr != _SERUM_PROGRAM_ID_V3 && mProgramIdStr != _OPEN_BOOK_DEX_PROGRAM) {
-      // }
-    } catch (parseMeketDataError) {
-      log({ parseMeketDataError });
+      const accountInfo = await connection
+        .getAccountInfo(poolId)
+        .catch(() => null)
+        .then(async (res) => {
+          if (res) return res;
+          await sleep(1_200);
+          return connection.getAccountInfo(poolId);
+        });
+      if (!accountInfo) return { Err: GetPoolKeysError.POOL_NOT_FOUND };
+      let poolState: LiquidityStateV4 | LiquidityStateV5 | undefined =
+        undefined;
+      let version: 4 | 5 | undefined = undefined;
+      const poolAccountOwner = accountInfo.owner;
+      if (accountInfo.data.length == LIQUIDITY_STATE_LAYOUT_V4.span) {
+        poolState = LIQUIDITY_STATE_LAYOUT_V4.decode(accountInfo.data);
+        version = 4;
+      } else if (accountInfo.data.length == LIQUIDITY_STATE_LAYOUT_V5.span) {
+        poolState = LIQUIDITY_STATE_LAYOUT_V5.decode(accountInfo.data);
+        version = 5;
+      } else return { Err: GetPoolKeysError.INVALID_POOL_DATA_LENGTH };
+      if (!poolState || !version)
+        return { Err: GetPoolKeysError.INVALID_POOL_ID };
+
+      const {
+        authority,
+        baseDecimals,
+        baseMint,
+        baseVault,
+        configId,
+        id,
+        lookupTableAccount,
+        lpDecimals,
+        lpMint,
+        lpVault,
+        marketAuthority,
+        marketId,
+        marketProgramId,
+        marketVersion,
+        nonce,
+        openOrders,
+        programId,
+        quoteDecimals,
+        quoteMint,
+        quoteVault,
+        targetOrders,
+        // version,
+        withdrawQueue,
+      } = Liquidity.getAssociatedPoolKeys({
+        baseMint: poolState.baseMint,
+        baseDecimals: poolState.baseDecimal.toNumber(),
+        quoteMint: poolState.quoteMint,
+        quoteDecimals: poolState.quoteDecimal.toNumber(),
+        marketId: poolState.marketId,
+        marketProgramId: poolState.marketProgramId,
+        marketVersion: 3,
+        programId: poolAccountOwner,
+        version,
+      });
+      if (lpMint.toBase58() != poolState.lpMint.toBase58()) {
+        return { Err: GetPoolKeysError.INVALID_POOL_INFO_FOUND };
+      }
+      let marketState: any | undefined = undefined;
+      try {
+        const marketStateRes = await this.getMarketState(connection, marketId);
+        if (!marketStateRes.Ok)
+          return { Err: GetPoolKeysError.MARKET_INFO_NOT_FOUND };
+        marketState = marketStateRes.Ok;
+      } catch (getMarketStateError) {
+        log({ getMarketStateError });
+      }
+      if (!marketState) return { Err: GetPoolKeysError.MARKET_INFO_NOT_FOUND };
+      const {
+        baseVault: marketBaseVault,
+        quoteVault: marketQuoteVault,
+        eventQueue: marketEventQueue,
+        bids: marketBids,
+        asks: marketAsks,
+      } = marketState;
+      const res: LiquidityPoolKeys = {
+        baseMint,
+        quoteMint,
+        quoteDecimals,
+        baseDecimals,
+        authority,
+        baseVault,
+        quoteVault,
+        id,
+        lookupTableAccount,
+        lpDecimals,
+        lpMint,
+        lpVault,
+        marketAuthority,
+        marketId,
+        marketProgramId,
+        marketVersion,
+        openOrders,
+        programId,
+        targetOrders,
+        version,
+        withdrawQueue,
+        marketAsks,
+        marketBids,
+        marketBaseVault,
+        marketQuoteVault,
+        marketEventQueue,
+      };
+      return { Ok: res };
+    } catch (getPoolKeysError) {
+      console.log({ getPoolKeysError });
+      return { Err: GetPoolKeysError.UNKNWON_ERROR };
     }
-    if (!marketState) throw 'MarketState not found';
-    const {
-      baseVault: marketBaseVault,
-      quoteVault: marketQuoteVault,
-      eventQueue: marketEventQueue,
-      bids: marketBids,
-      asks: marketAsks,
-    } = marketState;
-    const res: LiquidityPoolKeys = {
-      baseMint,
-      quoteMint,
-      quoteDecimals,
-      baseDecimals,
-      authority,
-      baseVault,
-      quoteVault,
-      id,
-      lookupTableAccount,
-      lpDecimals,
-      lpMint,
-      lpVault,
-      marketAuthority,
-      marketId,
-      marketProgramId,
-      marketVersion,
-      openOrders,
-      programId,
-      targetOrders,
-      version,
-      withdrawQueue,
-      marketAsks,
-      marketBids,
-      marketBaseVault,
-      marketQuoteVault,
-      marketEventQueue,
-    };
-    this.cachedPoolKeys.set(poolId.toBase58(), res);
-    // log({ poolKeys: res })
-    return res;
   }
 
   private addPoolKeys(poolInfo: LiquidityAssociatedPoolKeys, marketState: any) {
@@ -516,9 +549,9 @@ export class BaseRay {
       {
         marketId: web3.PublicKey;
         vaultInstructions: web3.TransactionInstruction[];
-        vaultSigners: web3.Signer[];
+        vaultSigners: web3.Keypair[];
         marketInstructions: web3.TransactionInstruction[];
-        marketSigners: web3.Signer[];
+        marketSigners: web3.Keypair[];
       },
       string
     >
@@ -536,7 +569,7 @@ export class BaseRay {
     };
     const programID = this.orderBookProgramId;
     const vaultInstructions: web3.TransactionInstruction[] = [];
-    const vaultSigners: web3.Signer[] = [];
+    const vaultSigners: web3.Keypair[] = [];
     const [vaultOwner, vaultOwnerNonce] = await getVaultOwnerAndNonce(
       marketAccounts.market.publicKey,
       programID,
@@ -602,7 +635,7 @@ export class BaseRay {
 
     // create market account
     const marketInstructions: web3.TransactionInstruction[] = [];
-    const marketSigners: web3.Signer[] = [
+    const marketSigners: web3.Keypair[] = [
       marketAccounts.market,
       marketAccounts.bids,
       marketAccounts.asks,
@@ -824,7 +857,7 @@ export class BaseRay {
       .catch(() => [null, null, null, null]);
 
     if (!baseMintAccountInfo || !quoteMintAccountInfo) {
-      return { Err: 'Not enough fund to create pool 1' };
+      return { Err: 'Token information not found.' };
     }
 
     const cachedMarketState = this.cachedMarketInfo.get(
@@ -841,7 +874,7 @@ export class BaseRay {
     }
 
     if (input.baseMint.toBase58() != NATIVE_MINT.toBase58() && !userBaseAtaInfo)
-      return { Err: 'Not enough fund to create pool 2' };
+      return { Err: 'Not enough fund to create pool.' };
     else {
       if (input.baseMint.toBase58() == NATIVE_MINT.toBase58()) {
         const todo = web3.PublicKey.default;
@@ -870,9 +903,9 @@ export class BaseRay {
     if (
       input.quoteMint.toBase58() != NATIVE_MINT.toBase58() &&
       !userQuoteAtaInfo
-    )
-      return { Err: 'Not enough fund to create pool 3' };
-    else {
+    ) {
+      return { Err: 'Not enough fund to create pool.' };
+    } else {
       if (input.quoteMint.toBase58() == NATIVE_MINT.toBase58()) {
         const todo = web3.PublicKey.default;
         const buf = Buffer.alloc(SPL_ACCOUNT_LAYOUT.span);
@@ -1008,6 +1041,7 @@ export class BaseRay {
         // computeBudgetConfig: { microLamports: 250_000, units: 8000_000 },
       })
     ).innerTransactions;
+
     const ixs: web3.TransactionInstruction[] = [];
     const signers: web3.Signer[] = [];
     // ixs.push(...createPoolIxs.instructions)
@@ -1016,6 +1050,7 @@ export class BaseRay {
       ixs.push(...ix.instructions);
       signers.push(...ix.signers);
     }
+
     return {
       Ok: {
         baseAmount,
