@@ -11,32 +11,62 @@ import {
   TokenAmount,
 } from '@raydium-io/raydium-sdk';
 import {
+  getAccount,
   AccountLayout,
   AccountLayout as TokenAccountLayout,
   createAssociatedTokenAccountInstruction,
   createTransferInstruction,
   getAssociatedTokenAddressSync,
+  createBurnInstruction,
+  createCloseAccountInstruction,
   MintLayout,
   NATIVE_MINT,
 } from '@solana/spl-token';
-import { LAMPORTS_PER_SOL } from '@solana/web3.js';
+import {
+  LAMPORTS_PER_SOL,
+  ComputeBudgetProgram,
+  Keypair,
+} from '@solana/web3.js';
 
-import { debug, ENV, TX_FEE } from '@root/configs';
+import { debug, ENV, TX_FEE, ATA_INIT_COST, MAX_TX_FEE } from '@root/configs';
 
 import { BaseMpl } from './base/baseMpl';
 import { BaseRay, CreateMarketInput } from './base/baseRay';
 import { BaseSpl } from './base/baseSpl';
-import { Result, TxPassResult } from './base/types';
-import { calcNonDecimalValue, deployDataToIPFS, sleep } from './base/utils';
-import { Web3BundleError, Web3Error } from './errors';
+import {
+  TransferInfoFromIxs as TransferInfoFromIxs,
+  Web3PassTxResult,
+  Web3SendTxInput,
+  Web3SendTxOpt,
+  Web3SendTxResult,
+  Web3SignedSendTxOpt,
+  Result,
+  TxPassResult,
+} from './base/types';
+import {
+  calcNonDecimalValue,
+  deployDataToIPFS,
+  getKeypairFromStr,
+  getKeypairFromUint8Array,
+  sleep,
+} from './base/utils';
+import {
+  TxFailReason,
+  TxFailResult,
+  Web3BundleError,
+  Web3Error,
+} from './errors';
 import {
   getBlockhash,
+  isBlockhashExpired,
   getJitoTipsAccount,
   getPubkeyFromStr,
   sendBundle,
   sendBundleTest,
+  getFundReceiversInfoFromIxs,
 } from './utils';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
+import { getPriorityFee } from './priorityFee';
 
 const log = console.log;
 const incTxFeeIx = web3.ComputeBudgetProgram.setComputeUnitPrice({
@@ -89,6 +119,8 @@ export type LaunchBundleRes = {
   deployerAddress?: string;
   marketId?: string;
   poolId?: string;
+  bundleId?: string;
+  err?: string;
   bundleRes?: {
     bundleId: string;
     poolCreateTxSignature: string;
@@ -127,6 +159,7 @@ export class Connectivity {
   private baseSpl: BaseSpl;
   private baseRay: BaseRay;
   private readonly network: WalletAdapterNetwork;
+  private txCooldownLockGuard: boolean;
 
   constructor(input: {
     wallet: Wallet | AnchorProvider;
@@ -143,6 +176,7 @@ export class Connectivity {
     this.baseSpl = new BaseSpl(this.connection);
     this.baseRay = new BaseRay({ rpcEndpointUrl: this.connection.rpcEndpoint });
     this.network = network;
+    this.txCooldownLockGuard = false;
   }
 
   private async sendTransaction(
@@ -155,8 +189,15 @@ export class Connectivity {
     const recentBlockhash = (await this.connection.getLatestBlockhash())
       .blockhash;
     tx.recentBlockhash = recentBlockhash;
+
     if (signers && signers.length > 0) tx.sign(...signers);
     const signedTxs = await this.provider.wallet.signTransaction(tx);
+
+    // const fees = await signedTxs.getEstimatedFee(this.connection);
+    // console.log('signedTxs fees:', fees);
+
+    // throw 'Tx Failed';
+
     const rawTx = Buffer.from(signedTxs.serialize());
     const txSignature = await web3
       .sendAndConfirmRawTransaction(this.connection, rawTx)
@@ -165,13 +206,271 @@ export class Connectivity {
         return web3
           .sendAndConfirmRawTransaction(this.connection, rawTx)
           .catch((sendRawTransactionError) => {
-            const logErrorMsg = opt?.logErrorMsg ?? !ENV.IN_PRODUCTION;
-            if (logErrorMsg) log({ sendRawTransactionError });
-            return undefined;
+            // const logErrorMsg = opt?.logErrorMsg ?? !ENV.IN_PRODUCTION;
+            // if (logErrorMsg) log({ sendRawTransactionError });
+            // return undefined;
+            log(sendRawTransactionError);
+            throw sendRawTransactionError.message; // .split(':').pop().trim();
           });
       });
     if (!txSignature) throw 'Tx Failed';
     return txSignature;
+  }
+
+  private async sendTransactionWithOpt(
+    txInfo: Web3SendTxInput,
+    opt?: Web3SendTxOpt,
+  ): Promise<Web3SendTxResult> {
+    const txSignature: undefined | string = undefined;
+    const passInfo = opt?.passInfo;
+    txInfo.lutsInfo = txInfo.lutsInfo ?? [];
+    // debug({ opt })
+    try {
+      const { ixs, signers } = txInfo;
+      const { skipWalletsign, skipIncTxFee } = opt ?? {};
+      const txFee = opt?.txFee ?? MAX_TX_FEE;
+      const incTxFeeIx = web3.ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: txFee,
+      });
+      let payerKey: web3.PublicKey | null = null;
+      while (this.txCooldownLockGuard) {
+        await sleep(1_000);
+      }
+      this.txCooldownLockGuard = true;
+      await sleep(5_000);
+      if (!skipWalletsign) {
+        payerKey = this.provider.publicKey;
+      } else {
+        if (!signers || signers.length < 1) {
+          return {
+            Err: { reason: TxFailReason.TX_SIGNER_NOT_FOUND, txInfo, passInfo },
+          };
+        }
+        payerKey = signers[0].publicKey;
+      }
+      const blockhashInfo = await getBlockhash(this.connection);
+      if (!blockhashInfo) {
+        return {
+          Err: { reason: TxFailReason.NETWORK_ISSUE, txInfo, passInfo },
+        };
+      }
+      const recentBlockhash = blockhashInfo.blockhash;
+      const msg = new web3.TransactionMessage({
+        instructions: skipIncTxFee ? ixs : [incTxFeeIx, ...ixs],
+        payerKey,
+        recentBlockhash,
+      }).compileToV0Message(txInfo.lutsInfo);
+      let tx = new web3.VersionedTransaction(msg);
+      // debug(`len: ${tx.serialize().length}`)
+      if (!skipWalletsign) {
+        const signedTx = await this.provider.wallet
+          .signTransaction(tx)
+          .catch(() => null);
+        if (!signedTx) {
+          this.txCooldownLockGuard = false;
+          return {
+            Err: { reason: TxFailReason.FAILED_TO_SIGN_TX, txInfo, passInfo },
+          };
+        }
+        tx = signedTx;
+      }
+      if (signers && signers.length > 0) tx.sign(signers);
+      this.txCooldownLockGuard = false;
+      return this.sendSignedTransaction(tx, txInfo, {
+        blockhashInfo,
+        passInfo,
+        skipSimulation: opt?.skipSimulation,
+      });
+    } catch (sendTransactionError) {
+      debug({ sendTransactionError, passInfo });
+      this.txCooldownLockGuard = false;
+      return {
+        Err: { reason: TxFailReason.UNKNOWN, txInfo, txSignature, passInfo },
+      };
+    }
+  }
+
+  private async sendSignedTransaction(
+    tx: web3.VersionedTransaction,
+    txInfo: Web3SendTxInput,
+    opt: Web3SignedSendTxOpt,
+  ): Promise<Result<Web3PassTxResult, TxFailResult>> {
+    let txSignature: undefined | string = undefined;
+    const { passInfo, skipSimulation } = opt ?? {};
+    try {
+      tx.serialize();
+    } catch (e) {
+      return {
+        Err: {
+          reason: TxFailReason.SIGNATURE_VERIFICATION_FAILD,
+          txInfo,
+          passInfo,
+        },
+      };
+    }
+    try {
+      const txStatus = {
+        // value: false,
+        isBlockhashExpired: 0,
+        isNetworkIssue: false,
+        // isError: false,
+      };
+      txSignature = await this.connection
+        .sendRawTransaction(Buffer.from(tx.serialize()), {
+          skipPreflight: true,
+          maxRetries: 20,
+        })
+        .catch((sendTransactionError) => {
+          const message = sendTransactionError?.message;
+          const stack = sendTransactionError?.stack;
+          if (message == 'Failed to fetch') txStatus.isNetworkIssue = true;
+          debug({ sendTransactionError });
+          return undefined;
+        });
+      if (!txSignature) {
+        if (txStatus.isNetworkIssue) {
+          return {
+            Err: { reason: TxFailReason.NETWORK_ISSUE, txInfo, passInfo },
+          };
+        }
+        return { Err: { reason: TxFailReason.UNKNOWN, txInfo, passInfo } };
+      }
+      try {
+        if (!skipSimulation) {
+          console.log('Transaction Simulating ...');
+          const simulationInfo = (
+            await this.connection.simulateTransaction(tx).catch(() => null)
+          )?.value;
+          if (simulationInfo?.err) {
+            const err = simulationInfo?.err;
+            if (err === 'BlockhashNotFound') {
+              // debug({ simulationInfo });
+              // return {
+              //   Err: {
+              //     reason: TxFailReason.EXPIRED,
+              //     txInfo,
+              //     txSignature,
+              //     msg: 'Simulation failed (BlockhashNotFound)',
+              //     passInfo,
+              //   },
+              // };
+            } else if (err === 'AlreadyProcessed') {
+              // const signatureInfo = (await this.connection.getSignatureStatus(txSignature).catch(() => null))?.value
+              // if (signatureInfo?.err) {
+              //   return {
+              //     Err: {
+              //       reason: TxFailReason.UNKNOWN,
+              //       txInfo,
+              //       txSignature,
+              //       msg: 'Simulation failed (AlreadyProcessed)',
+              //       passInfo,
+              //     },
+              //   };
+              // }
+            } else {
+              debug({ simulationInfo });
+              return {
+                Err: {
+                  reason: TxFailReason.UNKNOWN,
+                  txInfo,
+                  txSignature,
+                  msg: 'Simulation failed',
+                  passInfo,
+                },
+              };
+            }
+          }
+        }
+      } catch (failedToSimulateTx) {
+        debug({ failedToSimulateTx });
+      }
+      const { lastValidBlockHeight, blockhash } = opt.blockhashInfo;
+      for (let i = 0; i < 40; ++i) {
+        await sleep(3_000);
+        const info = (
+          await this.connection
+            .getSignatureStatus(txSignature, { searchTransactionHistory: true })
+            .catch(async (getSignatureStatusError) => {
+              // debug({ getSignatureStatusError })
+              return null;
+            })
+        )?.value;
+        if (info) {
+          const { err, confirmationStatus } = info;
+          if (err) {
+            debug({ errTxSignatureStatusInfo: info });
+            return {
+              Err: {
+                reason: TxFailReason.UNKNOWN,
+                txInfo,
+                msg: 'Tx Signature status error',
+                passInfo,
+                txSignature,
+              },
+            };
+          }
+          if (confirmationStatus) {
+            if (
+              confirmationStatus == 'confirmed' ||
+              confirmationStatus == 'finalized'
+            )
+              return {
+                Ok: {
+                  input: txInfo,
+                  txSignature,
+                  passInfo,
+                },
+              };
+          }
+        }
+        if (await isBlockhashExpired(this.connection, lastValidBlockHeight)) {
+          txStatus.isBlockhashExpired += 1;
+        }
+        if (txStatus.isBlockhashExpired > 1) {
+          debug('blockhash expired : ', i);
+          return {
+            Err: {
+              reason: TxFailReason.EXPIRED,
+              txInfo: txInfo,
+              msg: 'Transaction blockhash expired',
+              passInfo,
+              txSignature,
+            },
+          };
+        }
+      }
+
+      const signatureInfo = (
+        await this.connection
+          .getSignatureStatus(txSignature)
+          .catch((getSignatureStatusError) => {
+            debug({ getSignatureStatusError });
+            return null;
+          })
+      )?.value;
+      if (signatureInfo) {
+        const err = signatureInfo?.err;
+        if (err) {
+          debug({ signatureInfo });
+          if (err == 'BlockhashNotFound')
+            return {
+              Err: {
+                reason: TxFailReason.EXPIRED,
+                txInfo,
+                txSignature,
+                passInfo,
+              },
+            };
+          return { Err: { reason: TxFailReason.UNKNOWN, txInfo, txSignature } };
+        } else return { Ok: { txSignature, input: txInfo, passInfo } };
+      }
+      return {
+        Err: { reason: TxFailReason.EXPIRED, txInfo, txSignature, passInfo },
+      };
+    } catch (sendSignedTransactionError) {
+      debug({ sendSignedTransactionError });
+      return { Err: { reason: TxFailReason.UNKNOWN, txInfo, passInfo } };
+    }
   }
 
   private async bundleGetCreateMarketIxsInfo(input: {
@@ -444,7 +743,7 @@ export class Connectivity {
         ...initMarketVaultsIxs,
       ],
       payerKey: user,
-      recentBlockhash,
+      recentBlockhash: recentBlockhash.blockhash,
     }).compileToV0Message();
 
     const tx = new web3.VersionedTransaction(msg);
@@ -635,7 +934,7 @@ export class Connectivity {
       const createMarketTxMsg = new web3.TransactionMessage({
         instructions: [...createMarketInfoRes.marketInstructions],
         payerKey: user,
-        recentBlockhash: createMarketRecentBlockhash,
+        recentBlockhash: createMarketRecentBlockhash.blockhash,
       }).compileToV0Message([lutsInfo]);
       const _createMarketTx = new web3.VersionedTransaction(createMarketTxMsg);
       _createMarketTx.sign([...createMarketInfoRes.marketSigners]);
@@ -651,7 +950,7 @@ export class Connectivity {
       const createPoolTxMsg = new web3.TransactionMessage({
         instructions: createPoolTxInfo.ixs,
         payerKey: user,
-        recentBlockhash: createPoolBlockhash,
+        recentBlockhash: createPoolBlockhash.blockhash,
       }).compileToV0Message();
       const _createPoolTx = new web3.VersionedTransaction(createPoolTxMsg);
       _createPoolTx.sign(createPoolTxInfo.signers);
@@ -680,7 +979,7 @@ export class Connectivity {
         const buyTxMsg = new web3.TransactionMessage({
           instructions: ixs,
           payerKey: buyerAuthority[0].publicKey,
-          recentBlockhash: buyBlockhash,
+          recentBlockhash: buyBlockhash.blockhash,
         }).compileToV0Message([lutsInfo]);
         const tx = new web3.VersionedTransaction(buyTxMsg);
         tx.sign(buyerAuthority);
@@ -704,8 +1003,8 @@ export class Connectivity {
       let bundleRes: Result<
         {
           bundleId: string;
-          txsSignature: string[];
-          bundleStatus: number;
+          txsSignature?: string[];
+          bundleStatus?: number;
         },
         string
       > | null = null;
@@ -740,20 +1039,24 @@ export class Connectivity {
         //TODO: verification failed
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_SEND };
       }
+
       if (!bundleRes || !bundleRes.Ok) {
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_SEND };
       }
+
       {
-        const { bundleId, bundleStatus, txsSignature } = bundleRes.Ok;
+        // const { bundleId, bundleStatus, txsSignature } = bundleRes.Ok;
+        const { bundleId } = bundleRes.Ok;
         finalRes.marketId = marketId.toBase58();
         finalRes.poolId = poolId.toBase58();
-        finalRes.bundleRes = {
-          bundleId,
-          bundleStatus,
-          marketCreateTxSignature: txsSignature[0],
-          poolCreateTxSignature: txsSignature[1],
-          buyTxsSignature: txsSignature.splice(2),
-        };
+        finalRes.bundleId = bundleId;
+        // finalRes.bundleRes = {
+        //   bundleId,
+        //   bundleStatus,
+        //   marketCreateTxSignature: txsSignature[0],
+        //   poolCreateTxSignature: txsSignature[1],
+        //   buyTxsSignature: txsSignature.splice(2),
+        // };
         finalRes.buyersInfo = buyersInfo.map((e) => {
           return {
             address: e.buyerAuthority.publicKey.toBase58(),
@@ -774,9 +1077,9 @@ export class Connectivity {
 
   async createToken(
     input: CreateTokenInput,
-  ): Promise<Result<{ txSignature: string; tokenAddress: string }, Web3Error>> {
+  ): Promise<Result<{ txSignature: string; tokenAddress: string }, string>> {
     const user = this.provider.publicKey;
-    if (!user) return { Err: Web3Error.WALLET_NOT_FOUND };
+    if (!user) return { Err: 'Wallet not found.' }; // Web3Error.WALLET_NOT_FOUND };
     const {
       name,
       symbol,
@@ -799,7 +1102,7 @@ export class Connectivity {
           ...socialLinks,
         },
       });
-      if (!hash) return { Err: Web3Error.FAILED_TO_DEPLOY_METADATA };
+      if (!hash) return { Err: 'Failed to deploy metadata.' }; // Web3Error.FAILED_TO_DEPLOY_METADATA };
       ipfsHash = hash;
     }
 
@@ -817,7 +1120,7 @@ export class Connectivity {
       initialSupply: supply,
     });
     if (!createTokenTxInfo) {
-      return { Err: Web3Error.FAILED_TO_PREPARE_TX };
+      return { Err: 'Failed to prepare transaction.' }; // Web3Error.FAILED_TO_PREPARE_TX };
     }
 
     console.log('create revokeMint tx');
@@ -845,33 +1148,58 @@ export class Connectivity {
     const mintKeypair = createTokenTxInfo.mintKeypair;
     const tokenAddress = mintKeypair.publicKey.toBase58();
 
-    console.log('tokenAddress', tokenAddress);
+    console.log('tokenAddress:', tokenAddress);
 
     console.log('sending txs');
 
-    const txSignature = await this.sendTransaction(createTokenTxInfo.ixs, [
-      mintKeypair,
-    ]).catch((sendTransactionError) => {
-      // if (!ENV.IN_PRODUCTION) {
-      log(sendTransactionError);
-      // }
-    });
+    const priorityFee = getPriorityFee();
+    const txFee = (priorityFee as any)[ENV.CREATE_TOKEN_PRIORITY_FEE_KEY];
 
-    console.log('Token Creation tx:', txSignature);
+    try {
+      let res = null;
+      for (let idx = 1; idx < 4; idx++) {
+        res = await this.sendTransactionWithOpt(
+          {
+            ixs: createTokenTxInfo.ixs,
+            signers: [createTokenTxInfo.mintKeypair],
+          },
+          { txFee, skipSimulation: true },
+        );
 
-    if (!txSignature) {
-      console.log('failed tx.');
-      return { Err: Web3Error.TRANSACTION_FAILED };
+        if (
+          res.Err &&
+          (res.Err.reason == TxFailReason.EXPIRED || // retry 1
+            res.Err.reason == TxFailReason.NETWORK_ISSUE)
+        ) {
+          console.log(`Retring Token Creation ... ${idx}`);
+          continue;
+        }
+
+        break;
+      }
+
+      debug({ burnLpTxRes: res });
+
+      if (!res) {
+        return { Err: 'TRANSACTION FAILED' };
+      }
+
+      if (res.Err || !res.Ok) {
+        if (res.Err?.reason == TxFailReason.FAILED_TO_SIGN_TX) {
+          return { Err: 'TRANSACTION CANCELLED' };
+        }
+        return { Err: 'TRANSACTION FAILED' };
+      }
+      return {
+        Ok: {
+          txSignature: res.Ok?.txSignature,
+          tokenAddress,
+        },
+      };
+    } catch (sendTransactionError: any) {
+      console.log(sendTransactionError);
+      return { Err: sendTransactionError };
     }
-
-    console.log('success txs');
-
-    return {
-      Ok: {
-        txSignature,
-        tokenAddress,
-      },
-    };
   }
 
   async revokeAuthority(
@@ -1132,7 +1460,7 @@ export class Connectivity {
     const msg = new web3.TransactionMessage({
       instructions: ixs,
       payerKey: sender,
-      recentBlockhash,
+      recentBlockhash: recentBlockhash.blockhash,
     }).compileToV0Message();
     const tx = new web3.VersionedTransaction(msg);
     const signedTx = await this.provider.wallet.signTransaction(tx);
@@ -1185,6 +1513,268 @@ export class Connectivity {
     return res;
   }
 
+  async burnLiquidity({
+    poolId,
+    percentageOfBurn,
+  }: {
+    poolId: web3.PublicKey;
+    percentageOfBurn: number;
+  }): Promise<Result<TxPassResult, string>> {
+    try {
+      if (percentageOfBurn > 100) percentageOfBurn = 100;
+      const poolKeysRes = await this.baseRay
+        .getPoolKeys(this.connection, poolId)
+        .catch((getPoolKeysError) => {
+          debug({ getPoolKeysError });
+          return null;
+        });
+      if (!poolKeysRes?.Ok) return { Err: 'POOL NOT FOUND' };
+      const poolKeys = poolKeysRes.Ok;
+      const user = this.provider.publicKey;
+      const ata = getAssociatedTokenAddressSync(poolKeys.lpMint, user);
+      const ataInfo = await getAccount(this.connection, ata).catch(() => {
+        return getAccount(this.connection, ata).catch((getAccountError) => {
+          debug({ getAccountError });
+          return null;
+        });
+      });
+      if (!ataInfo) return { Err: 'LP TOKEN NOT FOUND' };
+      const balance = Number(ataInfo.amount.toString());
+      if (!balance) return { Err: 'LP TOKEN NOT FOUND' };
+      const amount = Math.trunc((balance * percentageOfBurn) / 100);
+      if (!amount) return { Err: 'BURN LP AMOUNT IS TOO LOW' };
+
+      const ix = createBurnInstruction(
+        ata,
+        poolKeys.lpMint,
+        user,
+        BigInt(amount.toString()),
+      );
+      const priorityFeeInfo = getPriorityFee();
+      const txFee = (priorityFeeInfo as any)[ENV.BURN_TOKENs_PRIORITY_FEE_KEY];
+      let res = await this.sendTransactionWithOpt({ ixs: [ix] }, { txFee });
+      if (
+        res.Err &&
+        (res.Err.reason == TxFailReason.EXPIRED || // retry 1
+          res.Err.reason == TxFailReason.NETWORK_ISSUE)
+      ) {
+        res = await this.sendTransactionWithOpt({ ixs: [ix] }, { txFee });
+      }
+      if (
+        res.Err &&
+        (res.Err.reason == TxFailReason.EXPIRED || // return 2
+          res.Err.reason == TxFailReason.NETWORK_ISSUE)
+      ) {
+        res = await this.sendTransactionWithOpt({ ixs: [ix] }, { txFee });
+      }
+      debug({ burnLpTxRes: res });
+      if (res.Err || !res.Ok) {
+        if (res.Err?.reason == TxFailReason.FAILED_TO_SIGN_TX) {
+          return { Err: 'TRANSACTION CANCELLED' };
+        }
+        return { Err: 'TRANSACTION FAILED' };
+      }
+      return {
+        Ok: {
+          txSignature: res.Ok?.txSignature,
+        },
+      };
+    } catch (burnLpError: any) {
+      debug({ burnLpError });
+      return { Err: burnLpError };
+    }
+  }
+
+  async removeLiquidity(
+    poolId: web3.PublicKey,
+  ): Promise<Result<TxPassResult, string>> {
+    try {
+      const user = this.provider.publicKey;
+      const poolKeysRes = await this.baseRay
+        .getPoolKeys(this.connection, poolId)
+        .catch((getPoolKeysError) => {
+          debug({ getPoolKeysError });
+          return null;
+        });
+      if (!poolKeysRes?.Ok) return { Err: 'POOL NOT FOUND' };
+      const poolKeys = poolKeysRes.Ok;
+      const ata = getAssociatedTokenAddressSync(poolKeys.lpMint, user);
+      const ataInfo = await getAccount(this.connection, ata).catch(() => {
+        return getAccount(this.connection, ata).catch((getAccountError) => {
+          debug({ getAccountError });
+          return null;
+        });
+      });
+      if (!ataInfo) return { Err: 'LP TOKEN NOT FOUND' };
+      const balance = Number(ataInfo.amount.toString());
+      if (!balance) return { Err: 'LP TOKEN NOT FOUND' };
+      const { baseMint, quoteMint } = poolKeys;
+      const baseMintAta = getAssociatedTokenAddressSync(baseMint, user);
+      const quoteMintAta = getAssociatedTokenAddressSync(quoteMint, user);
+      const ixs: web3.TransactionInstruction[] = [];
+      const accountsInfo = await this.connection
+        .getMultipleAccountsInfo([baseMintAta, quoteMintAta])
+        .catch(async () => {
+          await sleep(1_000);
+          return this.connection
+            .getMultipleAccountsInfo([baseMintAta, quoteMintAta])
+            .catch((getMultipleAccountsInfoError) => {
+              debug({ getMultipleAccountsInfoError });
+              return null;
+            });
+        });
+      if (!accountsInfo) return { Err: 'FAILED_TO_FETCH_DATA' };
+      const [baseAtaInfo, quoteAtaInfo] = accountsInfo;
+      if (!baseAtaInfo)
+        ixs.push(
+          createAssociatedTokenAccountInstruction(
+            user,
+            baseMintAta,
+            user,
+            baseMint,
+          ),
+        );
+      if (!quoteAtaInfo)
+        ixs.push(
+          createAssociatedTokenAccountInstruction(
+            user,
+            quoteMintAta,
+            user,
+            quoteMint,
+          ),
+        );
+      const removeLiqIxs = Liquidity.makeRemoveLiquidityInstruction({
+        amountIn: balance.toString(),
+        poolKeys,
+        userKeys: {
+          baseTokenAccount: baseMintAta,
+          quoteTokenAccount: quoteMintAta,
+          lpTokenAccount: ata,
+          owner: user,
+        },
+      }).innerTransaction.instructions;
+      ixs.push(...removeLiqIxs);
+      if (quoteMint.toBase58() == NATIVE_MINT.toBase58()) {
+        // UnWrapSol
+        ixs.push(createCloseAccountInstruction(quoteMintAta, user, user));
+      }
+
+      const priorityFeeInfo = getPriorityFee();
+      const txFee = (priorityFeeInfo as any)[ENV.REMOVE_LP_PRIORITY_FEE_KEY];
+      let res = await this.sendTransactionWithOpt({ ixs }, { txFee });
+      if (
+        res.Err &&
+        (res.Err.reason == TxFailReason.EXPIRED || // retry 1
+          res.Err.reason == TxFailReason.NETWORK_ISSUE)
+      ) {
+        res = await this.sendTransactionWithOpt({ ixs }, { txFee });
+      }
+      debug({ mintTokenTxRes: res });
+      if (res.Err || !res.Ok) {
+        if (res.Err?.reason == TxFailReason.FAILED_TO_SIGN_TX) {
+          return { Err: 'TX_SIGN_FAILED' };
+        }
+        return { Err: 'TRANSACTION_FAILED' };
+      }
+      return {
+        Ok: {
+          txSignature: res.Ok?.txSignature,
+        },
+      };
+    } catch (removeLiquidityError) {
+      debug({ removeLiquidityError });
+      return { Err: 'FAILED_TO_PREPARE_TX' };
+    }
+  }
+
+  async fundWallets(
+    receivers: web3.PublicKey[],
+    amount: number,
+  ): Promise<
+    Result<
+      {
+        fundedWallets: string[];
+        nonFundedWallets: string[];
+      },
+      string
+    >
+  > {
+    try {
+      if (amount < 0.001) return { Err: 'FUND AMOUNT IS TOO LOW' };
+      amount = Math.trunc(amount * web3.LAMPORTS_PER_SOL);
+      const sender = this.provider.publicKey;
+      const senderInfo = await this.connection
+        .getAccountInfo(sender)
+        .catch(async () => {
+          await sleep(1000);
+          return this.connection.getAccountInfo(sender).catch(() => undefined);
+        });
+      if (!senderInfo) return { Err: 'SENDER INFO NOT FOUND' };
+      let cost = amount * receivers.length;
+      const senderBalance = senderInfo.lamports;
+
+      const txsInfo: web3.TransactionInstruction[][] = [];
+      const CHUNK_SIZE = 20;
+      let ixs: web3.TransactionInstruction[] = [];
+      for (let i = 1; i <= receivers.length; ++i) {
+        const receiver = receivers[i - 1];
+        ixs.push(
+          web3.SystemProgram.transfer({
+            fromPubkey: sender,
+            toPubkey: receiver,
+            lamports: amount,
+          }),
+        );
+        if (i % CHUNK_SIZE == 0) {
+          txsInfo.push(ixs);
+          ixs = [];
+        }
+      }
+      if (ixs.length > 0) txsInfo.push(ixs);
+      const priorityFeeInfo = getPriorityFee();
+      const txFee = (priorityFeeInfo as any)[ENV.REMOVE_LP_PRIORITY_FEE_KEY];
+      cost += txFee * txsInfo.length;
+      if (cost > senderBalance) {
+        const need = (cost - senderBalance) / web3.LAMPORTS_PER_SOL;
+        return { Err: `SENDER DOSE NOT HAVE ENOUGH SOL (needed : ${need})` };
+      }
+      const opt: Web3SendTxOpt = { skipSimulation: true, txFee };
+
+      const txsHandler: Promise<Web3SendTxResult>[] = [];
+      for (const info of txsInfo) {
+        txsHandler.push(
+          this.sendTransactionWithOpt({ ixs: info }, opt).then((res) => {
+            if (
+              res.Err?.reason == TxFailReason.EXPIRED ||
+              res.Err?.reason == TxFailReason.NETWORK_ISSUE
+            ) {
+              return this.sendTransactionWithOpt(res.Err.txInfo, opt);
+            }
+            return res;
+          }),
+        );
+      }
+      const passIxs: web3.TransactionInstruction[] = [];
+      const failIxs: web3.TransactionInstruction[] = [];
+      for (const handler of txsHandler) {
+        const res = await handler;
+        if (res.Ok) passIxs.push(...res.Ok.input.ixs);
+        else if (res.Err) failIxs.push(...res.Err.txInfo.ixs);
+      }
+
+      const fundedWallets = getFundReceiversInfoFromIxs(passIxs);
+      const nonFundedWallets = getFundReceiversInfoFromIxs(failIxs);
+      return {
+        Ok: {
+          fundedWallets,
+          nonFundedWallets,
+        },
+      };
+    } catch (fundWalletError) {
+      return { Err: 'FAILED TO PREPARE TXS' };
+    }
+  }
+
   async sendTestingBundle() {
     const senderAuth = web3.Keypair.fromSecretKey(
       Uint8Array.from(
@@ -1209,12 +1799,12 @@ export class Connectivity {
       lamports: 2 * 1_500_000,
     });
     const connection = new web3.Connection(ENV.RPC_ENDPOINT_TEST);
-    const blockhash = await getBlockhash(connection);
-    if (!blockhash) throw 'blockhash not found';
+    const blockhashInfo = await getBlockhash(connection);
+    if (!blockhashInfo) throw 'blockhash not found';
     const msg = new web3.TransactionMessage({
       instructions: [ix, ix2],
       payerKey: sender,
-      recentBlockhash: blockhash,
+      recentBlockhash: blockhashInfo.blockhash,
     }).compileToV0Message();
     const tx = new web3.VersionedTransaction(msg);
     tx.sign([senderAuth]);
@@ -1257,7 +1847,7 @@ export class Connectivity {
       });
 
       if (!createMarketInfoRes) {
-        return { Err: 'Web3BundleError.BUNDLER_MARKET_CREATION_FAILED' };
+        return { Err: 'Market transactions creation Failed.' };
       }
 
       const marketId = createMarketInfoRes.marketId;
@@ -1291,21 +1881,80 @@ export class Connectivity {
         return null;
       });
 
-      if (!lutsInfo)
-        return { Err: 'Web3BundleError.BUNDLER_FAILED_TO_PREPARE' };
+      if (!lutsInfo) {
+        return { Err: 'Failed to prepare the transactions.' };
+      }
 
       // create market tx
       debug('create market tx');
 
       await sleep(2_000);
 
+      const priorityFee = getPriorityFee();
+      let txFee = (priorityFee as any)[ENV.CREATE_MARKET_PRIORITY_FEE_KEY];
+
+      let res = null;
+      for (let idx = 1; idx < 4; idx++) {
+        res = await this.sendTransactionWithOpt(
+          {
+            ixs: createMarketInfoRes.marketInstructions,
+            signers: createMarketInfoRes.marketSigners,
+            lutsInfo: [lutsInfo],
+          },
+          { txFee, skipSimulation: true },
+        );
+
+        if (
+          res.Err &&
+          (res.Err.reason == TxFailReason.EXPIRED || // retry 1
+            res.Err.reason == TxFailReason.NETWORK_ISSUE)
+        ) {
+          console.log(`Retring Token Creation ... ${idx}`);
+          continue;
+        }
+
+        break;
+      }
+
+      debug({ burnLpTxRes: res });
+
+      if (!res) {
+        return { Err: 'TRANSACTION FAILED' };
+      }
+
+      if (res.Err || !res.Ok) {
+        if (res.Err?.reason == TxFailReason.FAILED_TO_SIGN_TX) {
+          return { Err: 'TRANSACTION CANCELLED' };
+        }
+        return { Err: 'TRANSACTION FAILED' };
+      }
+      return {
+        Ok: {
+          txSignature: res.Ok?.txSignature,
+          marketId: marketId.toBase58(),
+        },
+      };
+
+      /*
       const createMarketRecentBlockhash = await getBlockhash(this.connection);
       if (!createMarketRecentBlockhash)
-        return { Err: 'Web3BundleError.BUNDLER_FAILED_TO_PREPARE' };
+        return { Err: 'Failed to prepare the transactions.' };
+
+      const priorityFee = getPriorityFee();
+      let txFee = (priorityFee as any)[ENV.CREATE_MARKET_PRIORITY_FEE_KEY];
+      const incMarketCreationTxFeeIx = ComputeBudgetProgram.setComputeUnitPrice(
+        {
+          microLamports: txFee,
+        },
+      );
+
       const createMarketTxMsg = new web3.TransactionMessage({
-        instructions: [incTxFeeIx, ...createMarketInfoRes.marketInstructions],
+        instructions: [
+          incMarketCreationTxFeeIx,
+          ...createMarketInfoRes.marketInstructions,
+        ],
         payerKey: user,
-        recentBlockhash: createMarketRecentBlockhash,
+        recentBlockhash: createMarketRecentBlockhash.blockhash,
       }).compileToV0Message([lutsInfo]);
       const _createMarketTx = new web3.VersionedTransaction(createMarketTxMsg);
       _createMarketTx.sign([...createMarketInfoRes.marketSigners]);
@@ -1339,7 +1988,7 @@ export class Connectivity {
           marketId: marketId.toBase58(),
           txSignature,
         },
-      };
+      };*/
     } catch (innerLaunchBundleError) {
       debug({ innerLaunchBundleError });
       throw innerLaunchBundleError;
@@ -1349,7 +1998,7 @@ export class Connectivity {
   async launchBundleWithMarket(
     input: LaunchBundleInput,
     onConsole: (log: string) => void,
-  ): Promise<Result<LaunchBundleRes, Web3BundleError>> {
+  ): Promise<Result<LaunchBundleRes, string>> {
     const finalRes: LaunchBundleRes = {};
     try {
       const jitoTipsAccount = getJitoTipsAccount();
@@ -1374,16 +2023,21 @@ export class Connectivity {
       // Pool
       debug('prepare pool');
 
+      let bundleGetCreatePoolTxInfoError = '';
       const createPoolTxInfo = await this.bundleGetCreatePoolTxInfo({
         baseMint,
         quoteMint,
         baseMintAmount: bundleSetup.baseAmount,
         quoteMintAmount: bundleSetup.quoteAmount,
         marketId,
-      }).catch((bundleGetCreatePoolTxInfoError) => {
-        debug({ bundleGetCreatePoolTxInfoError });
-        return null;
+      }).catch((error) => {
+        debug({ error });
+        bundleGetCreatePoolTxInfoError = error;
       });
+
+      if (bundleGetCreatePoolTxInfoError !== '') {
+        return { Err: bundleGetCreatePoolTxInfoError };
+      }
 
       if (!createPoolTxInfo) {
         return { Err: Web3BundleError.BUNDLER_POOL_TX_SETUP_FAILED };
@@ -1455,14 +2109,22 @@ export class Connectivity {
         createPoolTxInfo.poolId,
       ];
 
+      let bundleCreateLookuptableError = '';
       const lutsInfo = await this.bundleCreateLookuptable(lutsAddress).catch(
-        (bundleCreateLookuptableError) => {
-          debug({ bundleCreateLookuptableError });
-          return null;
+        (error) => {
+          debug({ error });
+          bundleCreateLookuptableError = error;
+          // return null;
         },
       );
 
-      if (!lutsInfo) return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      if (bundleCreateLookuptableError !== '') {
+        return { Err: bundleCreateLookuptableError };
+      }
+
+      if (!lutsInfo) {
+        return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      }
 
       // create pool tx
       await sleep(2_000);
@@ -1477,7 +2139,7 @@ export class Connectivity {
       const createPoolTxMsg = new web3.TransactionMessage({
         instructions: createPoolTxInfo.ixs,
         payerKey: user,
-        recentBlockhash: createPoolBlockhash,
+        recentBlockhash: createPoolBlockhash.blockhash,
       }).compileToV0Message();
 
       const _createPoolTx = new web3.VersionedTransaction(createPoolTxMsg);
@@ -1512,7 +2174,7 @@ export class Connectivity {
         const buyTxMsg = new web3.TransactionMessage({
           instructions: ixs,
           payerKey: buyerAuthority[0].publicKey,
-          recentBlockhash: buyBlockhash,
+          recentBlockhash: buyBlockhash.blockhash,
         }).compileToV0Message([lutsInfo]);
 
         const tx = new web3.VersionedTransaction(buyTxMsg);
@@ -1538,8 +2200,8 @@ export class Connectivity {
       let bundleRes: Result<
         {
           bundleId: string;
-          txsSignature: string[];
-          bundleStatus: number;
+          txsSignature?: string[];
+          bundleStatus?: number;
         },
         string
       > | null = null;
@@ -1572,17 +2234,19 @@ export class Connectivity {
         return { Err: Web3BundleError.BUNDLER_FAILED_TO_SEND };
       }
 
-      const { bundleId, bundleStatus, txsSignature } = bundleRes.Ok;
+      // const { bundleId, bundleStatus, txsSignature } = bundleRes.Ok;
+      const { bundleId } = bundleRes.Ok;
 
       finalRes.marketId = marketId.toBase58();
       finalRes.poolId = poolId.toBase58();
-      finalRes.bundleRes = {
-        bundleId,
-        bundleStatus,
-        marketCreateTxSignature: '',
-        poolCreateTxSignature: txsSignature[0],
-        buyTxsSignature: txsSignature.splice(1),
-      };
+      finalRes.bundleId = bundleId;
+      // finalRes.bundleRes = {
+      //   bundleId,
+      //   bundleStatus,
+      //   marketCreateTxSignature: '',
+      //   poolCreateTxSignature: txsSignature[0],
+      //   buyTxsSignature: txsSignature.splice(1),
+      // };
 
       finalRes.buyersInfo = buyersInfo.map((e) => {
         return {
@@ -1594,10 +2258,12 @@ export class Connectivity {
       onConsole('Confirmed successfully!');
 
       return { Ok: finalRes };
-    } catch (innerLaunchBundleError) {
+    } catch (innerLaunchBundleError: any) {
       debug({ innerLaunchBundleError });
       // return { Ok: finalRes };
-      return { Err: Web3BundleError.BUNDLER_FAILED_TO_PREPARE };
+      return {
+        Err: innerLaunchBundleError || Web3BundleError.BUNDLER_FAILED_TO_SEND,
+      };
     }
   }
 
@@ -1625,7 +2291,7 @@ export class Connectivity {
 
     const recentBlockhash = await getBlockhash(this.connection);
 
-    if (!recentBlockhash) throw 'blockhash not found (luts creation)';
+    if (!recentBlockhash) throw 'Blockhash not found.';
     const msg = new web3.TransactionMessage({
       instructions: [
         incTxFeeIx,
@@ -1634,7 +2300,7 @@ export class Connectivity {
         // ...initMarketVaultsIxs,
       ],
       payerKey: user,
-      recentBlockhash,
+      recentBlockhash: recentBlockhash.blockhash,
     }).compileToV0Message();
 
     const tx = new web3.VersionedTransaction(msg);
@@ -1642,7 +2308,7 @@ export class Connectivity {
     // tx.sign(vaultSigners);
 
     if (!recentBlockhash) {
-      throw 'Blockhash not found (luts creation)';
+      throw 'Blockhash not found.';
     }
 
     const signedTx = await this.provider.wallet.signTransaction(tx);
@@ -1656,7 +2322,7 @@ export class Connectivity {
       )
       .catch((createLookUpTableTxError) => {
         console.log({ createLookUpTableTxError });
-        throw 'failed to create luts';
+        throw 'Failed to create lookup table.';
       });
 
     debug(`Create lut tx Signature: ${txSignature}`);
@@ -1680,12 +2346,12 @@ export class Connectivity {
               .catch(() => null)
               .then(async (lutsInfo) => {
                 if (lutsInfo?.value) return lutsInfo;
-                throw 'failed to create lut info';
+                throw 'Failed to create lookup table info.';
               });
           });
       });
     const lutInfo = lutInfoRes.value;
-    if (!lutInfo) throw 'failed to get luts';
+    if (!lutInfo) throw 'Failed to get lookup table info.';
     return lutInfo;
   }
 
@@ -1714,15 +2380,22 @@ export class Connectivity {
     const recentBlockhash = await getBlockhash(this.connection);
 
     if (!recentBlockhash) throw 'blockhash not found (luts creation)';
+
+    const priorityFee = getPriorityFee();
+    let txFee = (priorityFee as any)[ENV.CREATE_MARKET_PRIORITY_FEE_KEY];
+    const incTxsFeeIx = web3.ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: txFee,
+    });
+
     const msg = new web3.TransactionMessage({
       instructions: [
-        incTxFeeIx,
+        incTxsFeeIx,
         lookupTableInst,
         extendInstruction,
         ...initMarketVaultsIxs,
       ],
       payerKey: user,
-      recentBlockhash,
+      recentBlockhash: recentBlockhash.blockhash,
     }).compileToV0Message();
 
     const tx = new web3.VersionedTransaction(msg);
@@ -1741,6 +2414,7 @@ export class Connectivity {
       .sendAndConfirmRawTransaction(
         this.connection,
         Buffer.from(signedTx.serialize()),
+        { skipPreflight: true, maxRetries: 20 },
       )
       .catch((createLookUpTableTxError) => {
         console.log({ createLookUpTableTxError });
@@ -1756,12 +2430,14 @@ export class Connectivity {
       .catch(() => null)
       .then(async (lutsInfo) => {
         if (lutsInfo?.value) return lutsInfo;
-        await sleep(15_000);
+
+        await sleep(10_000);
         return await this.connection
           .getAddressLookupTable(lookupTableAddress)
           .catch(() => null)
           .then(async (lutsInfo) => {
             if (lutsInfo?.value) return lutsInfo;
+
             await sleep(10_000);
             return await this.connection
               .getAddressLookupTable(lookupTableAddress)
