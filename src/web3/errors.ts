@@ -1,12 +1,38 @@
+import { web3 } from '@coral-xyz/anchor';
+
+export type TxFailResult = {
+  txInfo: {
+    ixs: web3.TransactionInstruction[];
+    signer?: web3.Keypair[];
+  };
+  reason: TxFailReason;
+  txSignature?: string;
+  msg?: string;
+  passInfo?: any; //PERF any type for now
+};
+
+export enum TxFailReason {
+  WALLET_NOT_FOUND = 'WALLET_NOT_FOUND',
+  NETWORK_ISSUE = 'NETWORK_ISSUE',
+  EXPIRED = 'TRANSACTION_EXPIRED',
+  INSUFFICIENT_FUND = 'INSUFFICIENT_FUND',
+  TX_FAILED = 'TX_FAILED',
+  TX_SIGNER_NOT_FOUND = 'TX_SIGNER_NOT_FOUND',
+  FAILED_TO_SIGN_TX = 'FAILED_TO_SIGN_TX',
+  SIGNER_NOT_FOUND = 'SIGNER_NOT_FOUND',
+  UNKNOWN = 'UNKNOWN ISSUE',
+  SIGNATURE_VERIFICATION_FAILD = 'SIGNATURE_VERIFICATION_FAILD',
+}
+
 export enum Web3BundleError {
   //BUNDLER
-  BUNDLER_MARKET_CREATION_FAILED,
-  BUNDLER_MARKET_ID_FAILED,
-  BUNDLER_POOL_TX_SETUP_FAILED,
-  BUNDLER_BUY_TX_SETUP_FAILED,
-  BUNDLER_AIRDROP_TXS_SETUP_FAILED,
-  BUNDLER_FAILED_TO_PREPARE,
-  BUNDLER_FAILED_TO_SEND,
+  BUNDLER_MARKET_CREATION_FAILED = 'Market creation failed.',
+  BUNDLER_MARKET_ID_FAILED = 'Market Id is failed.',
+  BUNDLER_POOL_TX_SETUP_FAILED = 'Transaction setup failed.',
+  BUNDLER_BUY_TX_SETUP_FAILED = 'Buy transaction setup failed.',
+  BUNDLER_AIRDROP_TXS_SETUP_FAILED = 'Airdrop transactions setup failed.',
+  BUNDLER_FAILED_TO_PREPARE = 'Failed to prepare transaction.',
+  BUNDLER_FAILED_TO_SEND = 'Failed to send transaction.',
 }
 
 export enum Web3Error {
@@ -28,17 +54,17 @@ export enum Web3Error {
 export function web3BundleErrorToStr(error: Web3BundleError) {
   switch (error) {
     case Web3BundleError.BUNDLER_MARKET_CREATION_FAILED:
-      return 'BUNDLER_MARKET_CREATION_FAILED';
+      return Web3BundleError.BUNDLER_MARKET_CREATION_FAILED;
     case Web3BundleError.BUNDLER_POOL_TX_SETUP_FAILED:
-      return 'BUNDLER_POOL_TX_SETUP_FAILED';
+      return Web3BundleError.BUNDLER_POOL_TX_SETUP_FAILED;
     case Web3BundleError.BUNDLER_BUY_TX_SETUP_FAILED:
-      return 'BUNDLER_BUY_TX_SETUP_FAILED';
+      return Web3BundleError.BUNDLER_BUY_TX_SETUP_FAILED;
     case Web3BundleError.BUNDLER_AIRDROP_TXS_SETUP_FAILED:
-      return 'BUNDLER_AIRDROP_TXS_SETUP_FAILED';
+      return Web3BundleError.BUNDLER_AIRDROP_TXS_SETUP_FAILED;
     case Web3BundleError.BUNDLER_FAILED_TO_PREPARE:
-      return 'BUNDLER_FAILED_TO_PREPARE';
+      return Web3BundleError.BUNDLER_FAILED_TO_PREPARE;
     case Web3BundleError.BUNDLER_FAILED_TO_SEND:
-      return 'BUNDLER_FAILED_TO_SEND';
+      return Web3BundleError.BUNDLER_FAILED_TO_SEND;
   }
 }
 
